@@ -83,6 +83,7 @@
       down: 'M12 5v11M7.5 11.5 12 16l4.5-4.5M5 20h14',
       check: 'M5 5h14v15H5zM9 3v4M15 3v4M8.5 13l2.5 2.5 4.5-5',
       pen: 'M5 19l1-4L16 5l3 3L9 18zM14 7l3 3',
+      grade: 'M4 20V10M10 20V4M16 20v-7M21 20H3',
     };
     return html`<svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d=${paths[name]} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg>`;
   };
@@ -522,7 +523,7 @@
   /* ---------- Import ---------- */
   const STATUS_LABEL = { baru: 'Baru', sama: 'Sama', berubah: 'Berubah', cek: 'Perlu dicek', masalah: 'Bermasalah' };
 
-  function ImportModal({ kind, onClose, toast }) {
+  function ImportModal({ kind, extra, title: customTitle, templateBook, templateName, onClose, toast }) {
     const [file, setFile] = useState(null);
     const [parts, setParts] = useState(null);
     const [mode, setMode] = useState('lewati');
@@ -533,8 +534,8 @@
     const [busy, setBusy] = useState(false);
     const [drag, setDrag] = useState(false);
     const isFull = kind === 'lengkap';
-    const title = isFull ? 'Import Lengkap' : `Import ${KINDS[kind].label}`;
-    const analysis = useMemo(() => (parts ? Importer.analyze(parts, Store.snapshotDb(), { mode, confirmed }) : null), [parts, mode, confirmed]);
+    const title = customTitle || (isFull ? 'Import Lengkap' : `Import ${KINDS[kind].label}`);
+    const analysis = useMemo(() => (parts ? Importer.analyze(parts, Store.snapshotDb(), { mode, confirmed, extra }) : null), [parts, mode, confirmed]);
 
     const loadBook = (wb, name) => {
       const p = Importer.readParts(XLSX, wb, kind);
@@ -591,7 +592,7 @@
         </label>
         ${error ? html`<p className="form-error" role="alert">${error}</p>` : null}
         <div className="drop-actions">
-          <button className="btn ghost" onClick=${() => saveBook(Importer.template(XLSX, kind), `template-${kind}.xlsx`, toast)}><${Icon} name="down"/>Download Template</button>
+          <button className="btn ghost" onClick=${() => saveBook(templateBook ? templateBook() : Importer.template(XLSX, kind), templateName || `template-${kind}.xlsx`, toast)}><${Icon} name="down"/>Download Template</button>
           ${isFull && Store.meta('mode') === 'demo' ? html`<button className="btn ghost" onClick=${usePractice}>Coba dengan file latihan</button>` : null}
         </div>
         ${isFull ? html`<p className="muted small">Urutan otomatis: ${Importer.ORDER.map((k) => KINDS[k].label).join(', ')}.</p>` : null}
@@ -634,6 +635,7 @@
   /* ---------- Pengaturan ---------- */
   function Settings({ openImport, ask, toast, onLock, onReset }) {
     const keys = ['nama_guru', 'nip', 'sekolah', 'alamat_sekolah', 'kepala_sekolah', 'default_kktp', 'default_bobot_formatif', 'default_bobot_sumatif'];
+    const [rule, setRule] = useState(Store.setting('aturan_remedial', 'batas_kktp'));
     const [form, setForm] = useState(() => Object.fromEntries(keys.map((k) => [k, Store.setting(k)])));
     const [pinModal, setPinModal] = useState(false);
     const mode = Store.meta('mode');
@@ -646,7 +648,7 @@
       e.preventDefault();
       const f = Number(form.default_bobot_formatif); const s = Number(form.default_bobot_sumatif);
       if (f + s !== 100) { toast('Bobot formatif dan sumatif harus berjumlah 100.', 'bad'); return; }
-      await Store.saveSettings(form);
+      await Store.saveSettings({ ...form, aturan_remedial: rule });
       toast('Pengaturan tersimpan.');
     };
     const undo = (log) => ask({
@@ -681,6 +683,7 @@
           ${field('nama_guru', 'Nama guru')}${field('nip', 'NIP', { inputMode: 'numeric' })}${field('sekolah', 'Nama sekolah')}${field('kepala_sekolah', 'Kepala sekolah')}
           <div className="full">${field('alamat_sekolah', 'Alamat sekolah (untuk kop laporan)')}</div>
           ${field('default_kktp', 'KKTP bawaan', { inputMode: 'decimal' })}${field('default_bobot_formatif', 'Bobot formatif bawaan (%)', { inputMode: 'decimal' })}${field('default_bobot_sumatif', 'Bobot sumatif bawaan (%)', { inputMode: 'decimal' })}
+          <label className="field full" htmlFor="s-remedial"><span>Nilai remedial</span><select id="s-remedial" value=${rule} onChange=${(e) => setRule(e.target.value)}><option value="batas_kktp">Dibatasi sebesar KKTP</option><option value="penuh">Dihitung sesuai nilai yang didapat</option></select></label>
           <div className="form-actions full"><button className="btn primary">Simpan pengaturan</button></div>
         </div>
       </form>
@@ -996,6 +999,180 @@
     </div>`;
   }
 
+  /* ---------- Penilaian ---------- */
+  const score = (n) => (n === null || n === undefined ? '–' : Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 }));
+  const remedialRule = () => Store.setting('aturan_remedial', 'batas_kktp');
+
+  function nilaiTemplate(penilaian, ampu) {
+    const db = Store.snapshotDb();
+    const existing = new Map(db.Nilai.filter((n) => n.id_penilaian === penilaian.id_penilaian).map((n) => [n.id_siswa, n]));
+    const rows = [['nisn', 'nis', 'nama', 'nilai', 'remedial', 'catatan'], ...Teaching.roster(db, ampu, '').map((s) => {
+      const n = existing.get(s.id_siswa) || {};
+      return [s.nisn, s.nis, s.nama, n.nilai ? Number(n.nilai) : '', n.remedial ? Number(n.remedial) : '', n.catatan || ''];
+    })];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    for (let r = 1; r < rows.length; r += 1) {
+      [0, 1].forEach((c) => { const cell = ws[XLSX.utils.encode_cell({ r, c })]; if (cell) { cell.t = 's'; cell.z = '@'; } });
+    }
+    ws['!cols'] = [{ wch: 14 }, { wch: 10 }, { wch: 30 }, { wch: 8 }, { wch: 10 }, { wch: 26 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Nilai');
+    return wb;
+  }
+
+  function PenilaianModal({ ampu, row, onClose, toast }) {
+    const today = Teaching.ymd(new Date());
+    const [d, setD] = useState(row ? { ...row } : { jenis: 'Formatif', nama: '', tanggal: today, nilai_maks: '100' });
+    const [err, setErr] = useState('');
+    const submit = async (e) => {
+      e.preventDefault();
+      const nama = d.nama.trim();
+      const maks = Teaching.parseScore(d.nilai_maks);
+      if (!nama) { setErr('Nama penilaian wajib diisi.'); return; }
+      if (typeof maks !== 'number' || maks <= 0) { setErr('Nilai maksimal harus lebih dari 0.'); return; }
+      if (!d.tanggal) { setErr('Pilih tanggal.'); return; }
+      const db = Store.snapshotDb();
+      if (db.Penilaian.some((p) => p.id_pengampuan === ampu.id_pengampuan && fold(p.nama) === fold(nama) && p.id_penilaian !== (row && row.id_penilaian))) { setErr('Nama penilaian ini sudah dipakai.'); return; }
+      if (row && db.Nilai.some((n) => n.id_penilaian === row.id_penilaian && (Number(n.nilai) > maks || Number(n.remedial) > maks))) { setErr('Ada nilai yang melebihi nilai maksimal baru.'); return; }
+      await Store.commit([{ table: 'Penilaian', row: { ...(row || {}), id_penilaian: row ? row.id_penilaian : Store.uuid(), id_pengampuan: ampu.id_pengampuan, id_tp: row ? row.id_tp : '', jenis: d.jenis, nama, tanggal: d.tanggal, nilai_maks: String(maks) } }]);
+      toast('Penilaian tersimpan.');
+      onClose();
+    };
+    return html`<${Modal} title=${row ? 'Ubah penilaian' : 'Tambah penilaian'} onClose=${onClose}><form className="form-grid" onSubmit=${submit}>
+      <label className="field" htmlFor="pn-jenis"><span>Jenis</span><select id="pn-jenis" value=${d.jenis} onChange=${(e) => setD({ ...d, jenis: e.target.value })}>${Teaching.JENIS.map((j) => html`<option key=${j} value=${j}>${j}</option>`)}</select></label>
+      <label className="field" htmlFor="pn-tanggal"><span>Tanggal</span><input id="pn-tanggal" type="date" value=${d.tanggal} onChange=${(e) => setD({ ...d, tanggal: e.target.value })}/></label>
+      <label className="field full" htmlFor="pn-nama"><span>Nama penilaian</span><input id="pn-nama" placeholder="Contoh: Tugas 1 atau Sumatif Bab 2" value=${d.nama} onInput=${(e) => setD({ ...d, nama: e.target.value })}/></label>
+      <label className="field" htmlFor="pn-maks"><span>Nilai maksimal</span><input id="pn-maks" inputMode="decimal" value=${d.nilai_maks} onInput=${(e) => setD({ ...d, nilai_maks: e.target.value })}/></label>
+      ${err ? html`<p className="form-error full" role="alert">${err}</p>` : null}
+      <div className="form-actions full"><button type="button" className="btn ghost" onClick=${onClose}>Batal</button><button className="btn primary">Simpan</button></div>
+    </form><//>`;
+  }
+
+  function ScoreEntry({ ampu, penilaian, onBack, ask, toast, openImport, guard }) {
+    const db = Store.snapshotDb();
+    const kktp = Number(ampu.kktp) || 0;
+    const rule = remedialRule();
+    const version = useMemo(() => db.Nilai.filter((n) => n.id_penilaian === penilaian.id_penilaian).map((n) => n.updated_at).sort().join('|'), [db.Nilai]);
+    const load = () => {
+      const fresh = Store.snapshotDb();
+      const saved = new Map(fresh.Nilai.filter((n) => n.id_penilaian === penilaian.id_penilaian).map((n) => [n.id_siswa, n]));
+      const ids = new Set(Teaching.roster(fresh, ampu, '').map((s) => s.id_siswa));
+      const extra = fresh.Siswa.filter((s) => saved.has(s.id_siswa) && !ids.has(s.id_siswa));
+      const students = [...Teaching.roster(fresh, ampu, ''), ...extra];
+      return { students, form: Object.fromEntries(students.map((s) => { const r = saved.get(s.id_siswa); return [s.id_siswa, { nilai: r ? r.nilai.replace('.', ',') : '', remedial: r ? (r.remedial || '').replace('.', ',') : '', catatan: r ? r.catatan || '' : '' }]; })) };
+    };
+    const [state, setState] = useState(load);
+    const [dirty, setDirty] = useState(false);
+    const [err, setErr] = useState('');
+    const [edit, setEdit] = useState(false);
+    useEffect(() => { if (!dirty) { setState(load()); } }, [version]);
+    useEffect(() => { unsaved.current = dirty; return () => { unsaved.current = false; }; }, [dirty]);
+    const { students, form } = state;
+    const set = (id, k, val) => { setState((s) => ({ ...s, form: { ...s.form, [id]: { ...s.form[id], [k]: val } } })); setDirty(true); };
+    const entries = students.map((s) => ({ id_siswa: s.id_siswa, ...form[s.id_siswa] }));
+    const invalid = new Map(entries.map((e) => [e.id_siswa, Teaching.validateEntry(e, penilaian)]));
+    const save = async () => {
+      const bad = students.find((s) => invalid.get(s.id_siswa));
+      if (bad) { setErr(`${bad.nama}: ${invalid.get(bad.id_siswa)}`); return; }
+      setErr('');
+      await Store.commit(Teaching.saveNilai(Store.snapshotDb(), penilaian, entries));
+      setDirty(false);
+      toast('Nilai tersimpan.');
+    };
+    const remove = () => ask({
+      title: 'Hapus penilaian ini?', text: 'Semua nilai pada penilaian ini akan dihapus.', action: 'Hapus penilaian', danger: true,
+      onConfirm: async () => { await Store.commit(Teaching.deletePenilaian(Store.snapshotDb(), penilaian.id_penilaian)); unsaved.current = false; toast('Penilaian dihapus.'); onBack(); },
+    });
+    const scaled = (e) => {
+      if (invalid.get(e.id_siswa)) return null;
+      return Teaching.effectiveScore(e, penilaian, kktp, rule);
+    };
+    const shown = entries.map(scaled).filter((x) => x !== null);
+    const firstScore = (e) => (invalid.get(e.id_siswa) ? null : Teaching.effectiveScore({ nilai: e.nilai }, penilaian, kktp, rule));
+    const stillBelow = entries.filter((e) => { const s = scaled(e); return s !== null && s < kktp; }).length;
+    const label = (e) => {
+      const base = firstScore(e);
+      const s = scaled(e);
+      if (s === null) return null;
+      if (base !== null && base >= kktp) return html`<span className="chip baru">Pengayaan</span>`;
+      return s >= kktp ? html`<span className="chip berubah">Remedial tuntas</span>` : html`<span className="chip masalah">Perlu remedial</span>`;
+    };
+    return html`<div className="stack">
+      <div className="entry-head">
+        <button className="link" onClick=${() => guard(onBack)}>‹ Daftar penilaian</button>
+        <div className="grow"><h2>${penilaian.nama}</h2><p className="muted small">${penilaian.jenis} · ${shortDate(penilaian.tanggal)} · Nilai maksimal ${score(penilaian.nilai_maks)} · KKTP ${score(kktp)}</p></div>
+        <div className="row-btns"><button className="btn small ghost" onClick=${() => setEdit(true)}>Ubah</button>
+          <button className="btn small ghost" onClick=${() => guard(() => openImport({ kind: 'nilai', title: `Import nilai ${penilaian.nama}`, extra: { penilaian, ampu }, templateBook: () => nilaiTemplate(penilaian, ampu), templateName: 'template-nilai.xlsx' }))}><${Icon} name="upload"/>Import</button></div>
+      </div>
+      ${students.length ? html`<ol className="scores">${students.map((s, i) => {
+        const f = form[s.id_siswa];
+        const e = { id_siswa: s.id_siswa, ...f };
+        const v = scaled(e);
+        const base = firstScore(e);
+        const needs = (base !== null && base < kktp) || (v !== null && v < kktp) || f.remedial;
+        return html`<li key=${s.id_siswa} className=${invalid.get(s.id_siswa) ? 'bad' : ''}>
+          <span className="mono no-cell">${i + 1}</span>
+          <div className="score-name"><b>${s.nama}</b>${label(e)}</div>
+          <label className="mini" htmlFor=${`n-${s.id_siswa}`}><span>Nilai</span><input id=${`n-${s.id_siswa}`} inputMode="decimal" aria-label=${`Nilai ${s.nama}`} value=${f.nilai} onInput=${(ev) => set(s.id_siswa, 'nilai', ev.target.value)}/></label>
+          <label className="mini" htmlFor=${`r-${s.id_siswa}`}><span>Remedial</span><input id=${`r-${s.id_siswa}`} inputMode="decimal" aria-label=${`Remedial ${s.nama}`} disabled=${!needs} value=${f.remedial} onInput=${(ev) => set(s.id_siswa, 'remedial', ev.target.value)}/></label>
+          <label className="mini note" htmlFor=${`c-${s.id_siswa}`}><span>Catatan remedial atau pengayaan</span><input id=${`c-${s.id_siswa}`} aria-label=${`Catatan ${s.nama}`} value=${f.catatan} onInput=${(ev) => set(s.id_siswa, 'catatan', ev.target.value)}/></label>
+        </li>`;
+      })}</ol>` : html`<div className="panel empty"><p>Belum ada siswa aktif di kelas ini.</p></div>`}
+      ${err ? html`<p className="form-error" role="alert">${err}</p>` : null}
+      <div className="save-bar"><div className="tally"><span><b>${num(shown.length)}</b> dari ${num(students.length)} terisi</span><span><b>${score(shown.length ? shown.reduce((a, b) => a + b, 0) / shown.length : null)}</b> rata-rata</span><span><b>${num(stillBelow)}</b> perlu remedial</span></div>
+        <button className="link danger" onClick=${remove}>Hapus penilaian</button>
+        <button className="btn primary" disabled=${!dirty} onClick=${save}>Simpan nilai</button></div>
+      ${edit ? html`<${PenilaianModal} ampu=${ampu} row=${penilaian} toast=${toast} onClose=${() => setEdit(false)}/>` : null}
+    </div>`;
+  }
+
+  function GradeRecap({ ampu, label, toast }) {
+    const data = Teaching.gradeSummary(Store.snapshotDb(), ampu, remedialRule());
+    const exportBook = () => {
+      const head = ['No', 'Nama', 'NISN', ...data.items.map((p) => `${p.jenis}: ${p.nama}`), 'Formatif', 'Sumatif', 'Nilai akhir', 'Status'];
+      const rows = data.rows.map((r, i) => [i + 1, r.nama, r.nisn, ...r.cells.map((c) => (c === null ? '' : c)), r.formatif ?? '', r.sumatif ?? '', r.akhir ?? '', r.status]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([head, ...rows]), 'Rekap Nilai');
+      saveBook(wb, `rekap-nilai-${label.replace(/[^\w-]+/g, '-')}.xlsx`, toast);
+    };
+    if (!data.items.length) return html`<div className="panel empty"><p>Tambahkan penilaian dan isi nilainya dulu.</p></div>`;
+    const tone = { Tuntas: 'baru', 'Belum tuntas': 'masalah', 'Belum lengkap': 'cek' };
+    return html`<div className="stack">
+      <p className="muted small">Nilai akhir = Formatif ${score(data.bf)}% + Sumatif ${score(data.bs)}%. KKTP ${score(data.kktp)}. Tugas dihitung sebagai Formatif. Semua nilai pada skala 100.</p>
+      <div className="tiles recap-tiles"><div><b>${score(data.rata)}</b><span>Rata-rata akhir</span></div><div className="baru"><b>${num(data.tuntas)}</b><span>Tuntas</span></div><div className="masalah"><b>${num(data.belum)}</b><span>Belum tuntas</span></div><div className="cek"><b>${num(data.lengkap)}</b><span>Belum lengkap</span></div></div>
+      <div className="sheet"><table className="recap-table grades-table"><thead><tr><th className="no">No</th><th>Nama</th>${data.items.map((p) => html`<th key=${p.id_penilaian} className="num" title=${`${p.jenis}: ${p.nama}`}>${p.nama}</th>`)}<th className="num">Formatif</th><th className="num">Sumatif</th><th className="num">Akhir</th><th>Status</th></tr></thead>
+      <tbody>${data.rows.map((r, i) => html`<tr key=${r.id_siswa}><td className="no mono">${i + 1}</td><td className="nowrap">${r.nama}</td>
+        ${r.cells.map((c, x) => html`<td key=${x} className=${`num ${c !== null && c < data.kktp ? 'alert' : ''}`}>${score(c)}</td>`)}
+        <td className="num">${score(r.formatif)}</td><td className="num">${score(r.sumatif)}</td><td className="num"><b>${score(r.akhir)}</b></td><td><span className=${`chip ${tone[r.status]}`}>${r.status}</span></td></tr>`)}</tbody></table></div>
+      <div><button className="btn small ghost" onClick=${exportBook}><${Icon} name="down"/>Unduh rekap nilai (Excel)</button></div>
+    </div>`;
+  }
+
+  function PenilaianPage({ session, setSession, ask, toast, go, guard, openImport }) {
+    const { v, db, list } = teachingContext();
+    const [tab, setTab] = useState('daftar');
+    const [openId, setOpenId] = useState(null);
+    const [adding, setAdding] = useState(false);
+    const ampu = v.ampuMap.get(session.id_pengampuan);
+    const label = ampu ? v.ampuLabel(ampu) : '';
+    const items = ampu ? Teaching.assessments(db, ampu.id_pengampuan).slice().reverse() : [];
+    const opened = items.find((p) => p.id_penilaian === openId);
+    const rule = remedialRule();
+    return html`<div className="page"><header className="page-head"><div><p className="eyebrow">Penilaian</p><h1>${label || 'Penilaian'}</h1></div>
+      ${ampu && !opened ? html`<button className="btn primary" onClick=${() => setAdding(true)}><${Icon} name="plus"/>Tambah penilaian</button>` : null}</header>
+      ${!list.length ? html`<${NeedSetup} go=${go}/>` : opened ? html`<${ScoreEntry} key=${opened.id_penilaian} ampu=${ampu} penilaian=${opened} ask=${ask} toast=${toast} guard=${guard} openImport=${openImport} onBack=${() => setOpenId(null)}/>` : html`
+        <label className="field grade-select" htmlFor="nilai-ampu"><span>Mapel dan kelas</span><select id="nilai-ampu" value=${session.id_pengampuan} onChange=${(e) => setSession({ ...session, id_pengampuan: e.target.value })}>${list.map((p) => html`<option key=${p.id_pengampuan} value=${p.id_pengampuan}>${v.ampuLabel(p)}</option>`)}</select></label>
+        <${SubTabs} tabs=${[['daftar', 'Daftar penilaian'], ['rekap', 'Rekap nilai']]} value=${tab} onChange=${setTab}/>
+        ${tab === 'rekap' && ampu ? html`<${GradeRecap} ampu=${ampu} label=${label} toast=${toast}/>` : (items.length ? html`<ul className="history">${items.map((p) => {
+          const st = Teaching.assessmentStats(db, ampu, p, rule);
+          return html`<li key=${p.id_penilaian}><button onClick=${() => setOpenId(p.id_penilaian)}>
+            <span className="history-head"><b>${p.nama}</b><span className=${`chip ${p.jenis === 'Sumatif' ? 'berubah' : 'sama'}`}>${p.jenis}</span></span>
+            <span className="muted small">${shortDate(p.tanggal)} · ${num(st.filled)} dari ${num(st.total)} terisi · Rata-rata ${score(st.rata)}${st.kurang ? ` · ${num(st.kurang)} perlu remedial` : ''}</span></button></li>`;
+        })}</ul>` : html`<div className="panel empty"><p>Belum ada penilaian untuk ${label}.</p></div>`)}`}
+      ${adding ? html`<${PenilaianModal} ampu=${ampu} toast=${toast} onClose=${() => setAdding(false)}/>` : null}
+    </div>`;
+  }
+
   /* ---------- Kerangka ---------- */
   function App() {
     useStoreVersion();
@@ -1038,7 +1215,7 @@
     const go = (p, t) => guard(() => leave(p, t));
     const openSession = (p, s) => guard(() => { setSession(s); leave(p); });
     const current = session && session.id_pengampuan ? session : defaultSession();
-    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
+    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['nilai', 'Penilaian', 'grade'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
     const needLogin = Sync.status.phase === 'perlu-login';
     return html`<div className="shell">
       <aside className="side">
@@ -1051,10 +1228,11 @@
         ${page === 'home' ? html`<${Home} go=${go} openImport=${setImportKind} ask=${ask} toast=${toast} openSession=${openSession}/>` : null}
         ${page === 'presensi' ? html`<${PresensiPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard}/>` : null}
         ${page === 'jurnal' ? html`<${JurnalPage} session=${current} setSession=${setSession} toast=${toast} go=${go} guard=${guard} openSession=${openSession}/>` : null}
+        ${page === 'nilai' ? html`<${PenilaianPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard} openImport=${setImportKind}/>` : null}
         ${page === 'data' ? html`<${Master} tab=${tab} setTab=${setTab} openImport=${setImportKind} ask=${ask} toast=${toast}/>` : null}
         ${page === 'settings' ? html`<${Settings} openImport=${setImportKind} ask=${ask} toast=${toast} onLock=${() => setGate('unlock')} onReset=${boot}/>` : null}
       </div>
-      ${importKind ? html`<${ImportModal} kind=${importKind} onClose=${() => setImportKind(null)} toast=${toast}/>` : null}
+      ${importKind ? html`<${ImportModal} ...${typeof importKind === 'string' ? { kind: importKind } : importKind} key=${typeof importKind === 'string' ? importKind : importKind.title} onClose=${() => setImportKind(null)} toast=${toast}/>` : null}
       ${dialog ? html`<${Confirm} ...${dialog} onCancel=${() => setDialog(null)} onConfirm=${async () => { await dialog.onConfirm(); setDialog(null); }}/>` : null}
       ${relogin ? html`<${Relogin} onDone=${() => setRelogin(false)}/>` : null}
       <${Toasts} items=${toasts}/>

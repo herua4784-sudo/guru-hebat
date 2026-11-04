@@ -45,6 +45,14 @@
       { key: 'jam_ke', label: 'jam_ke', ex: '1-2', text: true },
     ] },
   };
+  KINDS.nilai = { label: 'Nilai', sheet: 'Nilai', table: 'Nilai', cols: [
+    { key: 'nisn', label: 'nisn', ex: '0112345678', text: true },
+    { key: 'nis', label: 'nis', ex: '2601', text: true, aliases: ['no_induk', 'nomor_induk'] },
+    { key: 'nama', label: 'nama', req: true, ex: 'Nama Siswa', aliases: ['nama_siswa', 'nama_lengkap'] },
+    { key: 'nilai', label: 'nilai', req: true, ex: '85', aliases: ['skor'] },
+    { key: 'remedial', label: 'remedial', ex: '75' },
+    { key: 'catatan', label: 'catatan', ex: '' },
+  ] };
   const ORDER = ['tahun', 'mapel', 'kelas', 'siswa', 'pengampuan', 'jadwal'];
 
   /* ---------- Bantuan ---------- */
@@ -404,6 +412,33 @@
     },
   };
 
+  analyzers.nilai = function nilai(row, res, work, ctx) {
+    const { penilaian, ampu } = ctx.extra;
+    const T = root.GM.Teaching;
+    const students = T.roster(work, ampu, '');
+    const nisn = text(row.data.nisn);
+    const nis = text(row.data.nis);
+    const name = text(row.data.nama);
+    const sameName = students.filter((s) => fold(s.nama) === fold(name));
+    let siswa = (nisn && students.find((s) => s.nisn === nisn)) || (nis && students.find((s) => s.nis === nis)) || null;
+    if (!siswa && !nisn && !nis && sameName.length === 1) [siswa] = sameName;
+    if (!siswa) res.errors.push(sameName.length > 1 ? `Ada dua siswa bernama ${name}. Isi NISN atau NIS.` : `Siswa ${name || '(kosong)'} tidak ada di kelas ini.`);
+    if (siswa && ctx.seen.has(siswa.id_siswa)) res.errors.push(`Siswa sama dengan baris ${ctx.seen.get(siswa.id_siswa)} di file ini.`);
+    const blank = text(row.data.nilai) === '' && text(row.data.remedial) === '' && text(row.data.catatan) === '';
+    if (blank && siswa) { res.warnings.push('Nilai kosong, baris dilewati.'); return finish(res, row, ctx, 'sama'); }
+    const entry = { id_siswa: siswa ? siswa.id_siswa : '', nilai: row.data.nilai, remedial: row.data.remedial, catatan: text(row.data.catatan) };
+    const invalid = T.validateEntry(entry, penilaian);
+    if (invalid) res.errors.push(invalid);
+    if (res.errors.length) return finish(res, row, ctx, 'masalah');
+    ctx.seen.set(siswa.id_siswa, row.no);
+    const changes = T.saveNilai(work, penilaian, [entry]);
+    const old = work.Nilai.find((n) => n.id_penilaian === penilaian.id_penilaian && n.id_siswa === siswa.id_siswa);
+    if (!changes.length) return finish(res, row, ctx, 'sama');
+    const apply = () => upsert(work, ctx, 'Nilai', changes[0].row);
+    if (!old) return finish(res, row, ctx, 'baru', null, apply);
+    return finish(res, row, ctx, 'berubah', diff(old, changes[0].row, [['nilai', 'Nilai'], ['remedial', 'Remedial'], ['catatan', 'Catatan']]), apply);
+  };
+
   /** parts dari readParts, db dari Store.snapshotDb. Tidak mengubah db asli. */
   function analyze(parts, db, opts = {}) {
     const work = {};
@@ -412,7 +447,7 @@
     const confirmed = opts.confirmed || new Set();
     const mode = opts.mode || 'lewati';
     const out = parts.map((part) => {
-      const ctx = { ops, confirmed, mode, seen: new Map() };
+      const ctx = { ops, confirmed, mode, seen: new Map(), extra: opts.extra };
       const rows = part.missing.length ? [] : part.rows.map((row) => {
         const res = { kind: part.kind, no: row.no, data: row.data, errors: [], warnings: [], changes: [], status: 'baru' };
         analyzers[part.kind](row, res, work, ctx);
