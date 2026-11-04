@@ -2,7 +2,7 @@
 (function (root) {
   const { useState, useEffect, useMemo, useRef, useCallback, createElement } = React;
   const html = htm.bind(createElement);
-  const { Store, Sync, Importer, Sample, Schema } = root.GM;
+  const { Store, Sync, Importer, Sample, Schema, Teaching } = root.GM;
   const { HARI, SAMPLE_MARK } = Schema;
   const { KINDS, fold, activeYear, yearLabel } = Importer;
   const DEMO_BUILD = !!root.GM_DEMO;
@@ -81,6 +81,8 @@
       x: 'M6 6l12 12M18 6 6 18',
       sync: 'M4 11a8 8 0 0 1 14-4l2 2M20 5v4h-4M20 13a8 8 0 0 1-14 4l-2-2M4 19v-4h4',
       down: 'M12 5v11M7.5 11.5 12 16l4.5-4.5M5 20h14',
+      check: 'M5 5h14v15H5zM9 3v4M15 3v4M8.5 13l2.5 2.5 4.5-5',
+      pen: 'M5 19l1-4L16 5l3 3L9 18zM14 7l3 3',
     };
     return html`<svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d=${paths[name]} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg>`;
   };
@@ -211,7 +213,7 @@
   const SyncPill = () => { const i = syncInfo(); return html`<span className=${`sync-pill ${i.tone}`}><i></i>${i.label}</span>`; };
 
   /* ---------- Beranda ---------- */
-  function Home({ go, openImport, ask, toast }) {
+  function Home({ go, openImport, ask, toast, openSession }) {
     const v = views();
     const today = new Date();
     const hari = HARI[(today.getDay() + 6) % 7];
@@ -225,6 +227,9 @@
       return null;
     };
     const siswaKelas = v.anggota.length;
+    const db = Store.snapshotDb();
+    const todayKey = Teaching.ymd(today);
+    const pendingWork = v.year ? Teaching.reminders(db, v.year.id_tahun, todayKey) : [];
     const checks = [
       ['Tahun ajaran aktif', v.year ? yearLabel(v.year) : 'Belum dipilih', !!v.year, 'tahun'],
       ['Mapel', `${num(Store.active('Mapel').length)} mapel`, Store.active('Mapel').length > 0, 'mapel'],
@@ -253,8 +258,14 @@
           <div className="panel-head"><h2>Jadwal ${hari}</h2><span className="muted small">${hariIni.length ? `${num(hariIni.length)} jam mengajar` : ''}</span></div>
           ${hariIni.length ? html`<ol className="timeline">${hariIni.map((j) => {
             const p = v.ampuMap.get(j.id_pengampuan);
+            const st = Teaching.sessionStatus(db, p.id_pengampuan, todayKey);
+            const s = { id_pengampuan: p.id_pengampuan, tanggal: todayKey };
             return html`<li key=${j.id_jadwal}><span className="mono time">${j.jam_mulai}<small>${j.jam_selesai}</small></span>
-              <div><strong>${(v.mapel.get(p.id_mapel) || {}).nama_mapel}</strong><span className="muted">Kelas ${(v.kelas.get(p.id_kelas) || {}).nama_kelas} · ${num(v.countKelas(p.id_kelas))} siswa${j.jam_ke ? ` · Jam ${j.jam_ke}` : ''}</span></div></li>`;
+              <div><strong>${(v.mapel.get(p.id_mapel) || {}).nama_mapel}</strong><span className="muted">Kelas ${(v.kelas.get(p.id_kelas) || {}).nama_kelas} · ${num(v.countKelas(p.id_kelas))} siswa${j.jam_ke ? ` · Jam ${j.jam_ke}` : ''}</span>
+              <div className="task-btns">
+                <button className=${st.presensi ? 'done' : ''} onClick=${() => openSession('presensi', s)}>${st.presensi ? '✓ ' : ''}Presensi</button>
+                <button className=${st.jurnal ? 'done' : ''} onClick=${() => openSession('jurnal', s)}>${st.jurnal ? '✓ ' : ''}Jurnal</button>
+              </div></div></li>`;
           })}</ol>` : html`<div className="empty"><p>Tidak ada jadwal hari ini.</p>${nextDay() ? html`<p className="muted small">Jadwal berikutnya hari ${nextDay()}.</p>` : html`<button className="btn small ghost" onClick=${() => go('data', 'jadwal')}>Isi jadwal</button>`}</div>`}
         </section>
         <section className="panel">
@@ -262,6 +273,14 @@
           <ul className="checks">${checks.map(([label, val, ok, tab]) => html`<li key=${label}><button onClick=${() => go('data', tab)}>
             <span className=${`dot ${ok ? 'ok' : ''}`} aria-hidden="true">${ok ? '✓' : ''}</span><span>${label}</span><span className="muted">${val}</span></button></li>`)}</ul>
         </section>
+        ${pendingWork.length ? html`<section className="panel">
+          <div className="panel-head"><h2>Perlu dilengkapi</h2><span className="muted small">7 hari terakhir</span></div>
+          <ul className="todo">${pendingWork.slice(0, 5).map((w) => html`<li key=${`${w.id_pengampuan}|${w.tanggal}`}><button onClick=${() => openSession(w.presensi ? 'jurnal' : 'presensi', { id_pengampuan: w.id_pengampuan, tanggal: w.tanggal })}>
+            <span><b>${v.ampuLabel(v.ampuMap.get(w.id_pengampuan))}</b><small className="muted">${shortDate(w.tanggal)}</small></span>
+            <span className="chip cek">${!w.presensi && !w.jurnal ? 'Presensi, jurnal' : (w.presensi ? 'Jurnal' : 'Presensi')}</span></button></li>`)}</ul>
+          ${pendingWork.length > 5 ? html`<p className="muted small">Ada ${num(pendingWork.length - 5)} lagi.</p>` : null}
+          <p className="muted small">Abaikan jika hari itu libur atau tidak ada pelajaran.</p>
+        </section>` : null}
         <section className="panel sync-panel">
           <div className="panel-head"><h2>Sinkronisasi</h2><span className=${`sync-pill ${info.tone}`}><i></i>${info.label}</span></div>
           <p className="muted">${info.detail}</p>
@@ -754,6 +773,229 @@
     </form><//>`;
   }
 
+  /* ---------- Presensi dan Jurnal ---------- */
+  const unsaved = { current: false };
+
+  function teachingContext() {
+    const v = views();
+    const db = Store.snapshotDb();
+    const list = v.ampu.filter((p) => v.year && p.id_tahun === v.year.id_tahun)
+      .sort((a, b) => v.ampuLabel(a).localeCompare(v.ampuLabel(b), 'id'));
+    return { v, db, list };
+  }
+  const longDate = (t) => Teaching.parseYmd(t).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const shortDate = (t) => Teaching.parseYmd(t).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const percent = (n) => (n === null ? '–' : `${n.toLocaleString('id-ID')}%`);
+  const jadwalOn = (db, list, tanggal) => {
+    const ids = new Set(list.map((p) => p.id_pengampuan));
+    const hari = Teaching.hariOf(tanggal);
+    return db.Jadwal.filter((j) => j.hari === hari && ids.has(j.id_pengampuan)).sort((a, b) => a.jam_mulai.localeCompare(b.jam_mulai));
+  };
+
+  function defaultSession() {
+    const { db, list } = teachingContext();
+    const tanggal = Teaching.ymd(new Date());
+    const first = jadwalOn(db, list, tanggal)[0];
+    return { tanggal, id_pengampuan: first ? first.id_pengampuan : (list[0] ? list[0].id_pengampuan : '') };
+  }
+
+  function SessionPicker({ session, onChange }) {
+    const { v, db, list } = teachingContext();
+    const today = Teaching.ymd(new Date());
+    const onDay = jadwalOn(db, list, session.tanggal);
+    return html`<section className="picker">
+      <div className="picker-fields">
+        <label className="field" htmlFor="sesi-tanggal"><span>Tanggal</span>
+          <input id="sesi-tanggal" type="date" max=${today} value=${session.tanggal} onChange=${(e) => { if (e.target.value) onChange({ ...session, tanggal: e.target.value }); }}/></label>
+        <label className="field" htmlFor="sesi-ampu"><span>Mapel dan kelas</span>
+          <select id="sesi-ampu" value=${session.id_pengampuan} onChange=${(e) => onChange({ ...session, id_pengampuan: e.target.value })}>
+            ${list.map((p) => html`<option key=${p.id_pengampuan} value=${p.id_pengampuan}>${v.ampuLabel(p)}</option>`)}
+          </select></label>
+      </div>
+      ${onDay.length ? html`<div className="day-chips" aria-label="Jadwal pada tanggal ini">${onDay.map((j) => html`
+        <button key=${j.id_jadwal} className=${j.id_pengampuan === session.id_pengampuan ? 'on' : ''} onClick=${() => onChange({ ...session, id_pengampuan: j.id_pengampuan })}>
+          <span className="mono">${j.jam_mulai}</span>${v.ampuLabel(v.ampuMap.get(j.id_pengampuan))}</button>`)}</div>`
+      : html`<p className="muted small">Tidak ada jadwal pada ${Teaching.hariOf(session.tanggal)}. Presensi tetap bisa diisi untuk jam pengganti.</p>`}
+    </section>`;
+  }
+
+  const SubTabs = ({ tabs, value, onChange }) => html`<nav className="tabs" aria-label="Bagian">${tabs.map(([id, l]) => html`
+    <button key=${id} className=${id === value ? 'on' : ''} aria-current=${id === value ? 'page' : undefined} onClick=${() => onChange(id)}>${l}</button>`)}</nav>`;
+
+  const NeedSetup = ({ go }) => html`<div className="panel empty"><p>Belum ada Pengampuan pada tahun ajaran aktif.</p>
+    <button className="btn small ghost" onClick=${() => go('data', 'pengampuan')}>Isi Pengampuan</button></div>`;
+
+  function PresensiForm({ ampu, tanggal, ask, toast }) {
+    const { db } = teachingContext();
+    const idPt = Teaching.pertemuanId(ampu.id_pengampuan, tanggal);
+    const students = useMemo(() => Teaching.roster(db, ampu, idPt), [idPt]);
+    const initial = useMemo(() => {
+      const saved = new Map(db.Presensi.filter((p) => p.id_pertemuan === idPt).map((p) => [p.id_siswa, p]));
+      return Object.fromEntries(students.map((s) => {
+        const r = saved.get(s.id_siswa);
+        return [s.id_siswa, { status: r ? r.status : 'Hadir', keterangan: r ? r.keterangan || '' : '' }];
+      }));
+    }, [idPt]);
+    const [form, setForm] = useState(initial);
+    const [dirty, setDirty] = useState(false);
+    const st = Teaching.sessionStatus(db, ampu.id_pengampuan, tanggal);
+    useEffect(() => { unsaved.current = dirty; return () => { unsaved.current = false; }; }, [dirty]);
+    const change = (id, patch) => { setForm((f) => ({ ...f, [id]: { ...f[id], ...patch } })); setDirty(true); };
+    const allPresent = () => { setForm(Object.fromEntries(students.map((s) => [s.id_siswa, { status: 'Hadir', keterangan: '' }]))); setDirty(true); };
+    const save = async () => {
+      const entries = students.map((s) => ({ id_siswa: s.id_siswa, ...form[s.id_siswa] }));
+      await Store.commit(Teaching.savePresensi(Store.snapshotDb(), ampu, tanggal, entries));
+      setDirty(false);
+      toast('Presensi tersimpan.');
+    };
+    const remove = () => ask({
+      title: 'Hapus pertemuan ini?', text: 'Presensi dan jurnal pada pertemuan ini akan dihapus.', action: 'Hapus pertemuan', danger: true,
+      onConfirm: async () => { const c = Teaching.deleteSession(Store.snapshotDb(), idPt); await Store.commit(c); setForm(Object.fromEntries(students.map((s) => [s.id_siswa, { status: 'Hadir', keterangan: '' }]))); setDirty(false); toast('Pertemuan dihapus.'); },
+    });
+    if (!students.length) return html`<div className="panel empty"><p>Belum ada siswa aktif di kelas ini.</p></div>`;
+    const counts = Teaching.STATUS.map((s) => [s, Object.values(form).filter((x) => x.status === s).length]);
+    return html`<div className="stack">
+      <div className="tools"><p className="muted small grow">${st.pertemuan ? `Pertemuan ke-${st.pertemuan.pertemuan_ke}` : 'Pertemuan baru'} · ${num(students.length)} siswa · ${st.presensi ? 'Sudah tersimpan' : 'Belum disimpan'}</p>
+        <button className="btn small ghost" onClick=${allPresent}>Semua hadir</button></div>
+      <ol className="attendance">${students.map((s, i) => {
+        const f = form[s.id_siswa];
+        return html`<li key=${s.id_siswa}>
+          <span className="mono no-cell">${i + 1}</span>
+          <div className="att-name"><b>${s.nama}</b>${s.status !== 'Aktif' ? html`<span className="muted small">${s.status}</span>` : null}</div>
+          <div className="seg" role="radiogroup" aria-label=${`Kehadiran ${s.nama}`}>${Teaching.STATUS.map((x) => html`
+            <button key=${x} role="radio" aria-checked=${f.status === x} title=${x} className=${f.status === x ? `on ${x.toLowerCase()}` : ''} onClick=${() => change(s.id_siswa, { status: x })}>${x[0]}</button>`)}</div>
+          ${f.status !== 'Hadir' ? html`<input className="att-note" id=${`ket-${s.id_siswa}`} aria-label=${`Keterangan ${s.nama}`} placeholder="Keterangan (boleh kosong)" value=${f.keterangan} onInput=${(e) => change(s.id_siswa, { keterangan: e.target.value })}/>` : null}
+        </li>`;
+      })}</ol>
+      <div className="save-bar">
+        <div className="tally">${counts.map(([k, n]) => html`<span key=${k}><b>${num(n)}</b> ${k}</span>`)}</div>
+        ${st.presensi ? html`<button className="link danger" onClick=${remove}>Hapus pertemuan</button>` : null}
+        <button className="btn primary" disabled=${st.presensi && !dirty} onClick=${save}>Simpan presensi</button>
+      </div>
+    </div>`;
+  }
+
+  function RecapView({ session, toast }) {
+    const { v, db, list } = teachingContext();
+    const [id, setId] = useState(session.id_pengampuan);
+    const [from, setFrom] = useState('');
+    const [to, setTo] = useState('');
+    const ampu = v.ampuMap.get(id);
+    const data = ampu ? Teaching.recap(db, ampu, from, to) : null;
+    const exportRecap = () => {
+      const rows = [['No', 'Nama', 'NISN', ...Teaching.STATUS, 'Tercatat', '% Hadir'], ...data.rows.map((r, i) => [i + 1, r.nama, r.nisn, r.Hadir, r.Sakit, r.Izin, r.Alpa, r.total, r.persen === null ? '' : r.persen])];
+      rows.push(['', 'Rekap kelas', '', data.kelas.Hadir, data.kelas.Sakit, data.kelas.Izin, data.kelas.Alpa, data.kelas.total, data.kelas.persen === null ? '' : data.kelas.persen]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Rekap Presensi');
+      saveBook(wb, `rekap-presensi-${v.ampuLabel(ampu).replace(/[^\w-]+/g, '-')}.xlsx`, toast);
+    };
+    return html`<div className="stack">
+      <div className="recap-tools">
+        <label className="field" htmlFor="rekap-ampu"><span>Mapel dan kelas</span><select id="rekap-ampu" value=${id} onChange=${(e) => setId(e.target.value)}>${list.map((p) => html`<option key=${p.id_pengampuan} value=${p.id_pengampuan}>${v.ampuLabel(p)}</option>`)}</select></label>
+        <label className="field" htmlFor="rekap-dari"><span>Dari tanggal</span><input id="rekap-dari" type="date" value=${from} onChange=${(e) => setFrom(e.target.value)}/></label>
+        <label className="field" htmlFor="rekap-sampai"><span>Sampai tanggal</span><input id="rekap-sampai" type="date" value=${to} onChange=${(e) => setTo(e.target.value)}/></label>
+      </div>
+      ${data ? html`<div className="tiles recap-tiles"><div><b>${num(data.sessions)}</b><span>Pertemuan</span></div><div><b>${percent(data.kelas.persen)}</b><span>Hadir kelas</span></div>
+        <div><b>${num(data.kelas.Sakit + data.kelas.Izin)}</b><span>Sakit dan izin</span></div><div className="masalah"><b>${num(data.kelas.Alpa)}</b><span>Alpa</span></div></div>
+      ${data.sessions ? html`<div className="sheet"><table className="recap-table"><thead><tr><th className="no">No</th><th>Nama</th><th className="num">H</th><th className="num">S</th><th className="num">I</th><th className="num">A</th><th className="num">% Hadir</th></tr></thead>
+        <tbody>${data.rows.map((r, i) => html`<tr key=${r.id_siswa}><td className="no mono">${i + 1}</td><td>${r.nama}</td><td className="num">${r.Hadir}</td><td className="num">${r.Sakit}</td><td className="num">${r.Izin}</td><td className=${`num ${r.Alpa ? 'alert' : ''}`}>${r.Alpa}</td><td className="num">${percent(r.persen)}</td></tr>`)}</tbody></table></div>
+        <div><button className="btn small ghost" onClick=${exportRecap}><${Icon} name="down"/>Unduh rekap (Excel)</button></div>`
+      : html`<div className="panel empty"><p>Belum ada pertemuan pada rentang ini.</p></div>`}` : null}
+    </div>`;
+  }
+
+  function PresensiPage({ session, setSession, ask, toast, go, guard }) {
+    const { v, list } = teachingContext();
+    const [tab, setTab] = useState('isi');
+    const ampu = v.ampuMap.get(session.id_pengampuan);
+    const label = ampu ? v.ampuLabel(ampu) : '';
+    return html`<div className="page"><header className="page-head"><div><p className="eyebrow">${longDate(session.tanggal)}</p><h1>Presensi${label ? ` ${label}` : ''}</h1></div></header>
+      ${list.length ? html`<${SubTabs} tabs=${[['isi', 'Isi presensi'], ['rekap', 'Rekap']]} value=${tab} onChange=${(t) => guard(() => setTab(t))}/>
+      ${tab === 'isi' ? html`<${SessionPicker} session=${session} onChange=${(s) => guard(() => setSession(s))}/>
+        ${ampu ? html`<${PresensiForm} key=${`${session.id_pengampuan}|${session.tanggal}`} ampu=${ampu} tanggal=${session.tanggal} ask=${ask} toast=${toast}/>` : null}`
+      : html`<${RecapView} session=${session} toast=${toast}/>`}` : html`<${NeedSetup} go=${go}/>`}
+    </div>`;
+  }
+
+  function JurnalForm({ ampu, tanggal, toast, onOpenPresensi }) {
+    const { v, db } = teachingContext();
+    const st = Teaching.sessionStatus(db, ampu.id_pengampuan, tanggal);
+    const old = db.Jurnal.find((j) => j.id_pertemuan === st.id);
+    const [form, setForm] = useState({ materi: old ? old.materi : '', kegiatan: old ? old.kegiatan : '', catatan: old ? old.catatan : '' });
+    const [dirty, setDirty] = useState(false);
+    const [err, setErr] = useState('');
+    useEffect(() => { unsaved.current = dirty; return () => { unsaved.current = false; }; }, [dirty]);
+    const set = (k, val) => { setForm((f) => ({ ...f, [k]: val })); setDirty(true); };
+    const save = async (e) => {
+      e.preventDefault();
+      if (!form.materi.trim()) { setErr('Materi wajib diisi.'); return; }
+      setErr('');
+      await Store.commit(Teaching.saveJurnal(Store.snapshotDb(), ampu, tanggal, form));
+      setDirty(false);
+      toast('Jurnal tersimpan.');
+    };
+    const hari = Teaching.hariOf(tanggal);
+    const jam = db.Jadwal.filter((j) => j.id_pengampuan === ampu.id_pengampuan && j.hari === hari).sort((a, b) => a.jam_mulai.localeCompare(b.jam_mulai))[0];
+    const siswa = new Map(db.Siswa.map((s) => [s.id_siswa, s]));
+    const absent = Teaching.absent(db, st.id);
+    return html`<form className="stack" onSubmit=${save}>
+      <dl className="facts">
+        <div><dt>Kelas</dt><dd>${(v.kelas.get(ampu.id_kelas) || {}).nama_kelas}</dd></div>
+        <div><dt>Jam</dt><dd>${jam ? `${jam.jam_mulai}–${jam.jam_selesai}${jam.jam_ke ? `, jam ${jam.jam_ke}` : ''}` : 'Di luar jadwal'}</dd></div>
+        <div><dt>Pertemuan ke</dt><dd>${st.pertemuan ? st.pertemuan.pertemuan_ke : 'Baru'}</dd></div>
+        <div className="wide"><dt>Tidak hadir</dt><dd>${st.presensi
+          ? (absent.length ? absent.map((a) => `${(siswa.get(a.id_siswa) || {}).nama || '?'} (${a.status[0]})`).join(', ') : 'Semua hadir')
+          : html`<button type="button" className="link" onClick=${onOpenPresensi}>Presensi belum diisi</button>`}</dd></div>
+      </dl>
+      <label className="field" htmlFor="jurnal-materi"><span>Materi</span><textarea id="jurnal-materi" rows="2" value=${form.materi} onInput=${(e) => set('materi', e.target.value)}></textarea></label>
+      <label className="field" htmlFor="jurnal-kegiatan"><span>Kegiatan pembelajaran</span><textarea id="jurnal-kegiatan" rows="4" value=${form.kegiatan} onInput=${(e) => set('kegiatan', e.target.value)}></textarea></label>
+      <label className="field" htmlFor="jurnal-catatan"><span>Catatan kelas</span><textarea id="jurnal-catatan" rows="3" value=${form.catatan} onInput=${(e) => set('catatan', e.target.value)}></textarea></label>
+      ${err ? html`<p className="form-error" role="alert">${err}</p>` : null}
+      <div className="form-actions"><button className="btn primary" disabled=${!!old && !dirty}>Simpan jurnal</button></div>
+    </form>`;
+  }
+
+  function JurnalHistory({ onOpen, toast }) {
+    const { v, db, list } = teachingContext();
+    const [id, setId] = useState('');
+    const allowed = new Set(list.map((p) => p.id_pengampuan));
+    const rows = db.Pertemuan.filter((p) => allowed.has(p.id_pengampuan) && (!id || p.id_pengampuan === id)).sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+    const jurnal = new Map(db.Jurnal.map((j) => [j.id_pertemuan, j]));
+    const siswa = new Map(db.Siswa.map((s) => [s.id_siswa, s]));
+    const names = (p) => Teaching.absent(db, p.id_pertemuan).map((a) => `${(siswa.get(a.id_siswa) || {}).nama || '?'} (${a.status[0]})`).join(', ');
+    const exportAll = () => {
+      const data = [['Tanggal', 'Mapel · Kelas', 'Pertemuan ke', 'Materi', 'Kegiatan', 'Catatan', 'Tidak hadir']];
+      rows.slice().reverse().forEach((p) => { const j = jurnal.get(p.id_pertemuan) || {}; data.push([p.tanggal, v.ampuLabel(v.ampuMap.get(p.id_pengampuan)), Number(p.pertemuan_ke), j.materi || '', j.kegiatan || '', j.catatan || '', names(p)]); });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Jurnal Mengajar');
+      saveBook(wb, 'jurnal-mengajar.xlsx', toast);
+    };
+    return html`<div className="stack">
+      <div className="tools"><select id="riwayat-ampu" aria-label="Saring mapel dan kelas" value=${id} onChange=${(e) => setId(e.target.value)}><option value="">Semua mapel dan kelas</option>${list.map((p) => html`<option key=${p.id_pengampuan} value=${p.id_pengampuan}>${v.ampuLabel(p)}</option>`)}</select>
+        <span className="muted small grow">${num(rows.length)} pertemuan</span>${rows.length ? html`<button className="btn small ghost" onClick=${exportAll}><${Icon} name="down"/>Unduh (Excel)</button>` : null}</div>
+      ${rows.length ? html`<ul className="history">${rows.map((p) => {
+        const j = jurnal.get(p.id_pertemuan);
+        const a = names(p);
+        return html`<li key=${p.id_pertemuan}><button onClick=${() => onOpen({ id_pengampuan: p.id_pengampuan, tanggal: p.tanggal })}>
+          <span className="history-head"><b>${v.ampuLabel(v.ampuMap.get(p.id_pengampuan))}</b>${j ? null : html`<span className="chip cek">Jurnal belum diisi</span>`}</span>
+          <span className="muted small">${shortDate(p.tanggal)} · Pertemuan ${p.pertemuan_ke}</span>
+          ${j ? html`<span>${j.materi}</span>` : null}${a ? html`<span className="muted small">Tidak hadir: ${a}</span>` : null}</button></li>`;
+      })}</ul>` : html`<div className="panel empty"><p>Pertemuan akan muncul di sini setelah presensi atau jurnal disimpan.</p></div>`}
+    </div>`;
+  }
+
+  function JurnalPage({ session, setSession, toast, go, guard, openSession }) {
+    const { v, list } = teachingContext();
+    const [tab, setTab] = useState('isi');
+    const ampu = v.ampuMap.get(session.id_pengampuan);
+    return html`<div className="page narrow"><header className="page-head"><div><p className="eyebrow">${longDate(session.tanggal)}</p><h1>Jurnal Mengajar</h1></div></header>
+      ${list.length ? html`<${SubTabs} tabs=${[['isi', 'Isi jurnal'], ['riwayat', 'Riwayat']]} value=${tab} onChange=${(t) => guard(() => setTab(t))}/>
+      ${tab === 'isi' ? html`<${SessionPicker} session=${session} onChange=${(s) => guard(() => setSession(s))}/>
+        ${ampu ? html`<${JurnalForm} key=${`${session.id_pengampuan}|${session.tanggal}`} ampu=${ampu} tanggal=${session.tanggal} toast=${toast} onOpenPresensi=${() => openSession('presensi', session)}/>` : null}`
+      : html`<${JurnalHistory} toast=${toast} onOpen=${(s) => { setSession(s); setTab('isi'); window.scrollTo(0, 0); }}/>`}` : html`<${NeedSetup} go=${go}/>`}
+    </div>`;
+  }
+
   /* ---------- Kerangka ---------- */
   function App() {
     useStoreVersion();
@@ -765,6 +1007,7 @@
     const [dialog, setDialog] = useState(null);
     const [toasts, setToasts] = useState([]);
     const [relogin, setRelogin] = useState(false);
+    const [session, setSession] = useState(null);
 
     const toast = useCallback((text, type = 'good') => {
       const id = Math.random();
@@ -787,18 +1030,27 @@
     if (gate === 'connect') return html`<${Connect} onDone=${() => setGate('app')}/>`;
     if (gate === 'unlock') return html`<${Unlock} toast=${toast} onDone=${() => setGate('app')}/>`;
 
-    const go = (p, t) => { setPage(p); if (t) setTab(t); window.scrollTo(0, 0); };
-    const nav = [['home', 'Beranda', 'home'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
+    const guard = (fn) => {
+      if (!unsaved.current) { fn(); return; }
+      ask({ title: 'Buang perubahan?', text: 'Perubahan yang belum disimpan akan hilang.', action: 'Buang perubahan', danger: true, onConfirm: async () => { unsaved.current = false; fn(); } });
+    };
+    const leave = (p, t) => { setPage(p); if (t) setTab(t); window.scrollTo(0, 0); };
+    const go = (p, t) => guard(() => leave(p, t));
+    const openSession = (p, s) => guard(() => { setSession(s); leave(p); });
+    const current = session && session.id_pengampuan ? session : defaultSession();
+    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
     const needLogin = Sync.status.phase === 'perlu-login';
     return html`<div className="shell">
       <aside className="side">
         <div className="side-brand"><span className="brand-box">GM</span><strong>Guru Mapel</strong></div>
         <nav aria-label="Menu utama">${nav.map(([id, l, ic]) => html`<button key=${id} className=${page === id ? 'on' : ''} aria-current=${page === id ? 'page' : undefined} onClick=${() => go(id)}><${Icon} name=${ic}/><span>${l}</span></button>`)}</nav>
-        <div className="side-foot"><${SyncPill}/><button className="icon-btn on-dark" onClick=${() => setGate('unlock')} aria-label="Kunci aplikasi" title="Kunci aplikasi"><${Icon} name="lock"/></button></div>
+        <div className="side-foot"><${SyncPill}/><button className="icon-btn on-dark" onClick=${() => guard(() => setGate('unlock'))} aria-label="Kunci aplikasi" title="Kunci aplikasi"><${Icon} name="lock"/></button></div>
       </aside>
       <div className="content">
         ${needLogin ? html`<div className="login-bar"><span>Sesi berakhir. Data menunggu dikirim.</span><button className="btn small primary" onClick=${() => setRelogin(true)}>Masukkan PIN</button></div>` : null}
-        ${page === 'home' ? html`<${Home} go=${go} openImport=${setImportKind} ask=${ask} toast=${toast}/>` : null}
+        ${page === 'home' ? html`<${Home} go=${go} openImport=${setImportKind} ask=${ask} toast=${toast} openSession=${openSession}/>` : null}
+        ${page === 'presensi' ? html`<${PresensiPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard}/>` : null}
+        ${page === 'jurnal' ? html`<${JurnalPage} session=${current} setSession=${setSession} toast=${toast} go=${go} guard=${guard} openSession=${openSession}/>` : null}
         ${page === 'data' ? html`<${Master} tab=${tab} setTab=${setTab} openImport=${setImportKind} ask=${ask} toast=${toast}/>` : null}
         ${page === 'settings' ? html`<${Settings} openImport=${setImportKind} ask=${ask} toast=${toast} onLock=${() => setGate('unlock')} onReset=${boot}/>` : null}
       </div>
