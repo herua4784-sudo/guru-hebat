@@ -2,7 +2,7 @@
 (function (root) {
   const { useState, useEffect, useMemo, useRef, useCallback, createElement } = React;
   const html = htm.bind(createElement);
-  const { Store, Sync, Importer, Sample, Schema, Teaching } = root.GM;
+  const { Store, Sync, Importer, Sample, Schema, Teaching, Reports } = root.GM;
   const { HARI, SAMPLE_MARK } = Schema;
   const { KINDS, fold, activeYear, yearLabel } = Importer;
   const DEMO_BUILD = !!root.GM_DEMO;
@@ -84,6 +84,9 @@
       check: 'M5 5h14v15H5zM9 3v4M15 3v4M8.5 13l2.5 2.5 4.5-5',
       pen: 'M5 19l1-4L16 5l3 3L9 18zM14 7l3 3',
       grade: 'M4 20V10M10 20V4M16 20v-7M21 20H3',
+      report: 'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7',
+      printer: 'M7 9V4h10v5M7 17H4v-7h16v7h-3M7 14h10v6H7z',
+      more: 'M5 12h.01M12 12h.01M19 12h.01',
     };
     return html`<svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d=${paths[name]} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg>`;
   };
@@ -634,7 +637,7 @@
 
   /* ---------- Pengaturan ---------- */
   function Settings({ openImport, ask, toast, onLock, onReset }) {
-    const keys = ['nama_guru', 'nip', 'sekolah', 'alamat_sekolah', 'kepala_sekolah', 'default_kktp', 'default_bobot_formatif', 'default_bobot_sumatif'];
+    const keys = ['nama_guru', 'nip', 'sekolah', 'kota', 'alamat_sekolah', 'kepala_sekolah', 'nip_kepala', 'default_kktp', 'default_bobot_formatif', 'default_bobot_sumatif'];
     const [rule, setRule] = useState(Store.setting('aturan_remedial', 'batas_kktp'));
     const [form, setForm] = useState(() => Object.fromEntries(keys.map((k) => [k, Store.setting(k)])));
     const [pinModal, setPinModal] = useState(false);
@@ -680,7 +683,7 @@
       <form className="panel" onSubmit=${save}>
         <div className="panel-head"><h2>Identitas dan nilai</h2></div>
         <div className="form-grid">
-          ${field('nama_guru', 'Nama guru')}${field('nip', 'NIP', { inputMode: 'numeric' })}${field('sekolah', 'Nama sekolah')}${field('kepala_sekolah', 'Kepala sekolah')}
+          ${field('nama_guru', 'Nama guru')}${field('nip', 'NIP', { inputMode: 'numeric' })}${field('sekolah', 'Nama sekolah')}${field('kota', 'Kota untuk tanda tangan')}${field('kepala_sekolah', 'Kepala sekolah')}${field('nip_kepala', 'NIP kepala sekolah', { inputMode: 'numeric' })}
           <div className="full">${field('alamat_sekolah', 'Alamat sekolah (untuk kop laporan)')}</div>
           ${field('default_kktp', 'KKTP bawaan', { inputMode: 'decimal' })}${field('default_bobot_formatif', 'Bobot formatif bawaan (%)', { inputMode: 'decimal' })}${field('default_bobot_sumatif', 'Bobot sumatif bawaan (%)', { inputMode: 'decimal' })}
           <label className="field full" htmlFor="s-remedial"><span>Nilai remedial</span><select id="s-remedial" value=${rule} onChange=${(e) => setRule(e.target.value)}><option value="batas_kktp">Dibatasi sebesar KKTP</option><option value="penuh">Dihitung sesuai nilai yang didapat</option></select></label>
@@ -1173,6 +1176,76 @@
     </div>`;
   }
 
+  /* ---------- Laporan ---------- */
+  function ReportPaper({ report, settings }) {
+    const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const cell = (v) => (typeof v === 'number' ? v.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : v);
+    const person = (role, name, nip) => html`<div className="sign"><p>${role}</p><p className="sign-name">${name || '..............................'}</p><p>NIP. ${nip || '..............................'}</p></div>`;
+    return html`<article className=${`report ${report.orientation}`}>
+      <header className="kop"><strong>${settings.sekolah || 'Nama sekolah'}</strong>${settings.alamat_sekolah ? html`<span>${settings.alamat_sekolah}</span>` : null}</header>
+      <h2 className="report-title">${report.title}</h2>
+      <dl className="report-meta">${report.meta.map(([k, val]) => html`<div key=${k}><dt>${k}</dt><dd>${cell(val)}</dd></div>`)}</dl>
+      ${report.empty ? html`<p className="report-empty">${report.empty}</p>` : html`
+        ${report.stats ? html`<dl className="report-stats">${report.stats.map(([k, val]) => html`<div key=${k}><dt>${k}</dt><dd>${val === null ? '–' : cell(val)}</dd></div>`)}</dl>` : null}
+        <div className="report-scroll"><table className="report-table">
+          <thead><tr>${report.head.map((h, i) => html`<th key=${i} className=${`a-${report.align[i]}`}>${h}</th>`)}</tr></thead>
+          <tbody>${report.rows.map((r, i) => html`<tr key=${i}>${r.map((c, x) => html`<td key=${x} className=${`a-${report.align[x]}`}>${cell(c)}</td>`)}</tr>`)}</tbody>
+          ${report.foot ? html`<tfoot><tr>${report.foot.map((c, x) => html`<td key=${x} className=${`a-${report.align[x]}`}>${cell(c)}</td>`)}</tr></tfoot>` : null}
+        </table></div>
+        ${report.notes.length ? html`<ul className="report-notes">${report.notes.map((n) => html`<li key=${n}>${n}</li>`)}</ul>` : null}
+        <div className="signs">
+          ${person(html`Mengetahui,<br/>Kepala Sekolah`, settings.kepala_sekolah, settings.nip_kepala)}
+          ${person(html`${settings.kota ? `${settings.kota}, ` : ''}${today}<br/>Guru Mata Pelajaran`, settings.nama_guru, settings.nip)}
+        </div>`}
+    </article>`;
+  }
+
+  function LaporanPage({ session, toast, go }) {
+    const { v, db, list } = teachingContext();
+    const monthStart = `${Teaching.ymd(new Date()).slice(0, 8)}01`;
+    const [kind, setKind] = useState('hadir');
+    const [id, setId] = useState(session.id_pengampuan);
+    const [from, setFrom] = useState(monthStart);
+    const [to, setTo] = useState(Teaching.ymd(new Date()));
+    const cfg = Reports.KINDS.find((k) => k.id === kind);
+    const settings = Object.fromEntries(['sekolah', 'alamat_sekolah', 'kota', 'kepala_sekolah', 'nip_kepala', 'nama_guru', 'nip'].map((k) => [k, Store.setting(k)]));
+    const picked = id === 'semua' && cfg.allowAll ? null : v.ampuMap.get(id) || v.ampuMap.get(session.id_pengampuan) || list[0] || null;
+    const needsPick = cfg.needsAmpu || cfg.allowAll;
+    const report = useMemo(() => {
+      if (cfg.needsAmpu && !picked) return null;
+      return Reports.build(kind, db, { ampu: cfg.needsAmpu || cfg.allowAll ? picked : null, from: cfg.dates ? from : '', to: cfg.dates ? to : '', list, guru: settings.nama_guru, rule: remedialRule(), yearLabel: v.year ? yearLabel(v.year) : '' });
+    }, [kind, id, from, to, db.Pertemuan.length, db.Presensi.length, db.Nilai.length, db.Jurnal.length]);
+    const print = () => {
+      if (DEMO_BUILD) { toast('Cetak aktif setelah aplikasi dipasang di GitHub Pages.', 'info'); return; }
+      const style = document.createElement('style');
+      style.textContent = `@page { size: A4 ${report.orientation}; margin: 13mm; }`;
+      document.head.appendChild(style);
+      const title = document.title;
+      document.title = report.file;
+      const done = () => { style.remove(); document.title = title; window.removeEventListener('afterprint', done); };
+      window.addEventListener('afterprint', done);
+      window.print();
+    };
+    const missing = !settings.sekolah || !settings.kepala_sekolah || !settings.nama_guru;
+    return html`<div className="page report-page">
+      <header className="page-head no-print"><div><p className="eyebrow">Laporan</p><h1>${cfg.label}</h1></div>
+        ${report && !report.empty ? html`<div className="head-actions">
+          <button className="btn ghost" onClick=${() => saveBook(Reports.workbook(XLSX, report, settings), `${report.file}.xlsx`, toast)}><${Icon} name="down"/>Unduh Excel</button>
+          <button className="btn primary" onClick=${print}><${Icon} name="printer"/>Cetak atau PDF</button></div>` : null}</header>
+      <div className="no-print"><${SubTabs} tabs=${Reports.KINDS.map((k) => [k.id, k.label])} value=${kind} onChange=${setKind}/></div>
+      <div className="report-tools no-print">
+        ${needsPick ? html`<label className="field" htmlFor="lap-ampu"><span>Mapel dan kelas</span><select id="lap-ampu" value=${picked ? picked.id_pengampuan : 'semua'} onChange=${(e) => setId(e.target.value)}>
+          ${cfg.allowAll ? html`<option value="semua">Semua mapel dan kelas</option>` : null}${list.map((p) => html`<option key=${p.id_pengampuan} value=${p.id_pengampuan}>${v.ampuLabel(p)}</option>`)}</select></label>` : null}
+        ${cfg.dates ? html`
+          <label className="field" htmlFor="lap-dari"><span>Dari tanggal</span><input id="lap-dari" type="date" value=${from} onChange=${(e) => setFrom(e.target.value)}/></label>
+          <label className="field" htmlFor="lap-sampai"><span>Sampai tanggal</span><input id="lap-sampai" type="date" value=${to} onChange=${(e) => setTo(e.target.value)}/></label>
+          <div className="range-btns"><button className="btn small ghost" onClick=${() => { setFrom(monthStart); setTo(Teaching.ymd(new Date())); }}>Bulan ini</button><button className="btn small ghost" onClick=${() => { setFrom(''); setTo(''); }}>Semua</button></div>` : null}
+      </div>
+      ${missing ? html`<div className="sample-bar no-print"><p>Lengkapi nama sekolah, kepala sekolah, dan nama guru untuk kop dan tanda tangan.</p><button className="btn small ghost" onClick=${() => go('settings')}>Buka Pengaturan</button></div>` : null}
+      ${report ? html`<${ReportPaper} report=${report} settings=${settings}/>` : html`<${NeedSetup} go=${go}/>`}
+    </div>`;
+  }
+
   /* ---------- Kerangka ---------- */
   function App() {
     useStoreVersion();
@@ -1185,6 +1258,7 @@
     const [toasts, setToasts] = useState([]);
     const [relogin, setRelogin] = useState(false);
     const [session, setSession] = useState(null);
+    const [moreOpen, setMoreOpen] = useState(false);
 
     const toast = useCallback((text, type = 'good') => {
       const id = Math.random();
@@ -1215,12 +1289,14 @@
     const go = (p, t) => guard(() => leave(p, t));
     const openSession = (p, s) => guard(() => { setSession(s); leave(p); });
     const current = session && session.id_pengampuan ? session : defaultSession();
-    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['nilai', 'Penilaian', 'grade'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
+    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['nilai', 'Penilaian', 'grade'], ['laporan', 'Laporan', 'report'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
+    const extra = ['laporan', 'data', 'settings'];
     const needLogin = Sync.status.phase === 'perlu-login';
     return html`<div className="shell">
       <aside className="side">
         <div className="side-brand"><span className="brand-box">GM</span><strong>Guru Mapel</strong></div>
-        <nav aria-label="Menu utama">${nav.map(([id, l, ic]) => html`<button key=${id} className=${page === id ? 'on' : ''} aria-current=${page === id ? 'page' : undefined} onClick=${() => go(id)}><${Icon} name=${ic}/><span>${l}</span></button>`)}</nav>
+        <nav aria-label="Menu utama">${nav.map(([id, l, ic]) => html`<button key=${id} className=${`${page === id ? 'on' : ''} ${extra.includes(id) ? 'desk-only' : ''}`} aria-current=${page === id ? 'page' : undefined} onClick=${() => go(id)}><${Icon} name=${ic}/><span>${l}</span></button>`)}
+          <button className=${`phone-only ${extra.includes(page) ? 'on' : ''}`} onClick=${() => setMoreOpen(true)}><${Icon} name="more"/><span>Lainnya</span></button></nav>
         <div className="side-foot"><${SyncPill}/><button className="icon-btn on-dark" onClick=${() => guard(() => setGate('unlock'))} aria-label="Kunci aplikasi" title="Kunci aplikasi"><${Icon} name="lock"/></button></div>
       </aside>
       <div className="content">
@@ -1229,12 +1305,14 @@
         ${page === 'presensi' ? html`<${PresensiPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard}/>` : null}
         ${page === 'jurnal' ? html`<${JurnalPage} session=${current} setSession=${setSession} toast=${toast} go=${go} guard=${guard} openSession=${openSession}/>` : null}
         ${page === 'nilai' ? html`<${PenilaianPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard} openImport=${setImportKind}/>` : null}
+        ${page === 'laporan' ? html`<${LaporanPage} session=${current} toast=${toast} go=${go}/>` : null}
         ${page === 'data' ? html`<${Master} tab=${tab} setTab=${setTab} openImport=${setImportKind} ask=${ask} toast=${toast}/>` : null}
         ${page === 'settings' ? html`<${Settings} openImport=${setImportKind} ask=${ask} toast=${toast} onLock=${() => setGate('unlock')} onReset=${boot}/>` : null}
       </div>
       ${importKind ? html`<${ImportModal} ...${typeof importKind === 'string' ? { kind: importKind } : importKind} key=${typeof importKind === 'string' ? importKind : importKind.title} onClose=${() => setImportKind(null)} toast=${toast}/>` : null}
       ${dialog ? html`<${Confirm} ...${dialog} onCancel=${() => setDialog(null)} onConfirm=${async () => { await dialog.onConfirm(); setDialog(null); }}/>` : null}
       ${relogin ? html`<${Relogin} onDone=${() => setRelogin(false)}/>` : null}
+      ${moreOpen ? html`<${Modal} title="Menu lainnya" onClose=${() => setMoreOpen(false)}><div className="more-list">${nav.filter((n) => extra.includes(n[0])).map(([id, l, ic]) => html`<button key=${id} onClick=${() => { setMoreOpen(false); go(id); }}><${Icon} name=${ic}/><span>${l}</span></button>`)}</div><//>` : null}
       <${Toasts} items=${toasts}/>
     </div>`;
   }
