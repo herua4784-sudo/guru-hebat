@@ -6,7 +6,7 @@
  * Pemasangan: lihat README.md. Jalankan setup() satu kali dari editor.
  */
 
-var APP_VERSION = '1.1.0';
+var APP_VERSION = '1.2.0';
 var META_COLS = ['created_at', 'updated_at', 'deleted', 'device_id', 'id_import', '_rev'];
 var SCHEMA = {
   Pengaturan:   { pk: 'key',           cols: ['key', 'value'] },
@@ -23,6 +23,11 @@ var SCHEMA = {
   TP:           { pk: 'id_tp',         cols: ['id_tp', 'id_mapel', 'tingkat', 'kode_tp', 'deskripsi', 'urutan', 'target_pertemuan', 'tautan_modul'] },
   Penilaian:    { pk: 'id_penilaian',  cols: ['id_penilaian', 'id_pengampuan', 'id_tp', 'jenis', 'nama', 'tanggal', 'nilai_maks'] },
   Nilai:        { pk: 'id_nilai',      cols: ['id_nilai', 'id_penilaian', 'id_siswa', 'nilai', 'remedial', 'catatan'] },
+  CatatanSiswa: { pk: 'id_catatan',    cols: ['id_catatan', 'id_siswa', 'id_pengampuan', 'tanggal', 'kategori', 'isi', 'tindak_lanjut', 'status'] },
+  BankSoal:     { pk: 'id_soal',       cols: ['id_soal', 'id_mapel', 'tingkat', 'id_tp', 'tipe', 'kesulitan', 'soal', 'opsi_a', 'opsi_b', 'opsi_c', 'opsi_d', 'opsi_e', 'kunci', 'pembahasan'] },
+  Kalender:     { pk: 'id_kalender',   cols: ['id_kalender', 'judul', 'jenis', 'tanggal_mulai', 'tanggal_selesai', 'keterangan'] },
+  Tugas:        { pk: 'id_tugas',      cols: ['id_tugas', 'id_pengampuan', 'judul', 'deskripsi', 'tanggal_beri', 'tenggat', 'id_penilaian'] },
+  PengumpulanTugas: { pk: 'id_kumpul', cols: ['id_kumpul', 'id_tugas', 'id_siswa', 'tanggal_kumpul', 'catatan'] },
   ImportLog:    { pk: 'id_import',     cols: ['id_import', 'tanggal', 'jenis_data', 'nama_file', 'jumlah_baru', 'jumlah_diperbarui', 'jumlah_gagal', 'status'] }
 };
 
@@ -268,7 +273,8 @@ function book_() {
 
 function readSheet_(ss, name) {
   var sheet = ss.getSheetByName(name);
-  if (!sheet) throw appError_('NOT_SETUP', 'Sheet ' + name + ' tidak ada. Jalankan setup() lagi.');
+  // Sheet yang belum ada dibuat otomatis agar pembaruan tidak perlu setup() ulang.
+  if (!sheet) { ensureSheet_(ss, name); sheet = ss.getSheetByName(name); }
   var lastCol = sheet.getLastColumn();
   var lastRow = sheet.getLastRow();
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);

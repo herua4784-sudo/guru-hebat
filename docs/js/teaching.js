@@ -142,6 +142,7 @@
     for (let i = 1; i <= days; i += 1) {
       const tanggal = addDays(today, -i);
       const hari = hariOf(tanggal);
+      if (root.GM.Extras && root.GM.Extras.isLibur(db, tanggal)) continue;
       const seen = new Set();
       db.Jadwal.filter((j) => j.hari === hari && ampu.has(j.id_pengampuan)).forEach((j) => {
         if (seen.has(j.id_pengampuan)) return;
@@ -296,7 +297,7 @@
   }
 
   root.GM.Teaching = {
-    STATUS, pertemuanId, presensiId, jurnalId, ymd, parseYmd, hariOf, addDays, roster, sessions,
+    STATUS, hash, pertemuanId, presensiId, jurnalId, ymd, parseYmd, hariOf, addDays, roster, sessions,
     ensureSession, savePresensi, saveJurnal, deleteSession, sessionStatus, absent, recap, reminders,
     tpList, tpForAmpu, tpProgress, nextTp, JENIS, nilaiId, parseScore, effectiveScore, assessments, validateEntry, saveNilai, deletePenilaian, gradeSummary, assessmentStats,
   };

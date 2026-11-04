@@ -2,7 +2,7 @@
 (function (root) {
   const { useState, useEffect, useMemo, useRef, useCallback, createElement } = React;
   const html = htm.bind(createElement);
-  const { Store, Sync, Importer, Sample, Schema, Teaching, Reports } = root.GM;
+  const { Store, Sync, Importer, Sample, Schema, Teaching, Reports, Extras } = root.GM;
   const { HARI, SAMPLE_MARK } = Schema;
   const { KINDS, fold, activeYear, yearLabel } = Importer;
   const DEMO_BUILD = !!root.GM_DEMO;
@@ -85,6 +85,11 @@
       pen: 'M5 19l1-4L16 5l3 3L9 18zM14 7l3 3',
       grade: 'M4 20V10M10 20V4M16 20v-7M21 20H3',
       report: 'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7',
+      note: 'M5 4h14v12l-5 5H5zM14 21v-5h5M9 9h6M9 13h3',
+      bank: 'M4 7h16M4 12h16M4 17h10M18 15v6M15 18h6',
+      chart: 'M4 4v16h16M8 16v-5M13 16V8M18 16v-3',
+      calendar: 'M4 6h16v15H4zM4 10h16M9 3v5M15 3v5',
+      task: 'M9 5h10M9 12h10M9 19h10M4 5l1 1 2-2M4 12l1 1 2-2M4 19l1 1 2-2',
       book: 'M5 4h6a2 2 0 0 1 1 1v15a2 2 0 0 0-1-1H5zM19 4h-6a2 2 0 0 0-1 1v15a2 2 0 0 1 1-1h6z',
       printer: 'M7 9V4h10v5M7 17H4v-7h16v7h-3M7 14h10v6H7z',
       more: 'M5 12h.01M12 12h.01M19 12h.01',
@@ -234,6 +239,8 @@
     const siswaKelas = v.anggota.length;
     const db = Store.snapshotDb();
     const todayKey = Teaching.ymd(today);
+    const agenda = Extras.upcoming(db, todayKey, 14);
+    const dueTasks = db.Tugas.filter((t) => t.tenggat >= todayKey && t.tenggat <= Teaching.addDays(todayKey, 3) && v.ampuMap.has(t.id_pengampuan)).sort((a, b) => a.tenggat.localeCompare(b.tenggat));
     const pendingWork = v.year ? Teaching.reminders(db, v.year.id_tahun, todayKey) : [];
     const checks = [
       ['Tahun ajaran aktif', v.year ? yearLabel(v.year) : 'Belum dipilih', !!v.year, 'tahun'],
@@ -278,13 +285,18 @@
           <ul className="checks">${checks.map(([label, val, ok, tab]) => html`<li key=${label}><button onClick=${() => go('data', tab)}>
             <span className=${`dot ${ok ? 'ok' : ''}`} aria-hidden="true">${ok ? '✓' : ''}</span><span>${label}</span><span className="muted">${val}</span></button></li>`)}</ul>
         </section>
+        ${agenda.length || dueTasks.length ? html`<section className="panel">
+          <div className="panel-head"><h2>Agenda terdekat</h2><button className="link" onClick=${() => go(dueTasks.length && !agenda.length ? 'tugas' : 'kalender')}>Lihat</button></div>
+          <ul className="agenda">${dueTasks.slice(0, 3).map((t) => html`<li key=${t.id_tugas}><span className="chip berubah">Tugas</span><span>${t.judul}</span><small className="muted">${shortDate(t.tenggat)}</small></li>`)}
+            ${agenda.slice(0, 4).map((k) => html`<li key=${k.id_kalender}><span className=${`chip ${EVENT_TONE[k.jenis]}`}>${k.jenis}</span><span>${k.judul}</span><small className="muted">${shortDate(k.tanggal_mulai)}</small></li>`)}</ul>
+        </section>` : null}
         ${pendingWork.length ? html`<section className="panel">
           <div className="panel-head"><h2>Perlu dilengkapi</h2><span className="muted small">7 hari terakhir</span></div>
           <ul className="todo">${pendingWork.slice(0, 5).map((w) => html`<li key=${`${w.id_pengampuan}|${w.tanggal}`}><button onClick=${() => openSession(w.presensi ? 'jurnal' : 'presensi', { id_pengampuan: w.id_pengampuan, tanggal: w.tanggal })}>
             <span><b>${v.ampuLabel(v.ampuMap.get(w.id_pengampuan))}</b><small className="muted">${shortDate(w.tanggal)}</small></span>
             <span className="chip cek">${!w.presensi && !w.jurnal ? 'Presensi, jurnal' : (w.presensi ? 'Jurnal' : 'Presensi')}</span></button></li>`)}</ul>
           ${pendingWork.length > 5 ? html`<p className="muted small">Ada ${num(pendingWork.length - 5)} lagi.</p>` : null}
-          <p className="muted small">Abaikan jika hari itu libur atau tidak ada pelajaran.</p>
+          <p className="muted small">Hari libur di Kalender tidak dihitung.</p>
         </section>` : null}
         <section className="panel sync-panel">
           <div className="panel-head"><h2>Sinkronisasi</h2><span className=${`sync-pill ${info.tone}`}><i></i>${info.label}</span></div>
@@ -458,9 +470,10 @@
     };
     return html`<${Modal} title=${model.title} onClose=${onClose}>
       <form className="form-grid" onSubmit=${submit}>
-        ${model.fields.map((f) => html`<label key=${f.key} className="field" htmlFor=${`f-${f.key}`}><span>${f.label}</span>
+        ${(typeof model.fields === 'function' ? model.fields(data) : model.fields).map((f) => html`<label key=${f.key} className=${`field ${f.full ? 'full' : ''}`} htmlFor=${`f-${f.key}`}><span>${f.label}</span>
           ${f.type === 'select'
             ? html`<select id=${`f-${f.key}`} value=${data[f.key] || ''} onChange=${(e) => setData({ ...data, [f.key]: e.target.value })}>${f.options.map(([val, l]) => html`<option key=${val} value=${val}>${l}</option>`)}</select>`
+            : f.type === 'textarea' ? html`<textarea id=${`f-${f.key}`} rows="3" value=${data[f.key] || ''} onInput=${(e) => setData({ ...data, [f.key]: e.target.value })}></textarea>`
             : html`<input id=${`f-${f.key}`} type=${f.type || 'text'} inputMode=${f.mode} placeholder=${f.placeholder} value=${data[f.key] || ''} onInput=${(e) => setData({ ...data, [f.key]: e.target.value })}/>`}</label>`)}
         ${err ? html`<p className="form-error full" role="alert">${err}</p>` : null}
         <div className="form-actions full"><button type="button" className="btn ghost" onClick=${onClose}>Batal</button><button className="btn primary">Simpan</button></div>
@@ -1222,14 +1235,7 @@
     }, [kind, id, from, to, db.Pertemuan.length, db.Presensi.length, db.Nilai.length, db.Jurnal.length]);
     const print = () => {
       if (DEMO_BUILD) { toast('Cetak aktif setelah aplikasi dipasang di GitHub Pages.', 'info'); return; }
-      const style = document.createElement('style');
-      style.textContent = `@page { size: A4 ${report.orientation}; margin: 13mm; }`;
-      document.head.appendChild(style);
-      const title = document.title;
-      document.title = report.file;
-      const done = () => { style.remove(); document.title = title; window.removeEventListener('afterprint', done); };
-      window.addEventListener('afterprint', done);
-      window.print();
+      printDoc(report.file, report.orientation);
     };
     const missing = !settings.sekolah || !settings.kepala_sekolah || !settings.nama_guru;
     return html`<div className="page report-page">
@@ -1252,10 +1258,10 @@
   }
 
   /* ---------- Perangkat Ajar ---------- */
-  const serverReady = () => {
+  const serverReady = (minor = 1) => {
     if (Store.meta('mode') !== 'online') return true;
     const [a, b] = String(Store.meta('server_version') || '0.0').split('.').map(Number);
-    return a > 1 || (a === 1 && b >= 1);
+    return a > 1 || (a === 1 && b >= minor);
   };
   const safeUrl = (u) => (/^https?:\/\/\S+$/i.test(String(u || '').trim()) ? String(u).trim() : '');
   const TP_TONE = { Tersampaikan: 'baru', Berjalan: 'berubah', Belum: 'sama' };
@@ -1369,6 +1375,327 @@
     </div>`;
   }
 
+  /* ---------- Menu tambahan: bersama ---------- */
+  function printDoc(file, orientation) {
+    const style = document.createElement('style');
+    style.textContent = `@page { size: A4 ${orientation}; margin: 13mm; }`;
+    document.head.appendChild(style);
+    const title = document.title;
+    document.title = file;
+    const done = () => { style.remove(); document.title = title; window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    window.print();
+  }
+  const UpdateNotice = () => html`<div className="sample-bar"><p><b>Perbarui Apps Script dulu.</b> Tempel Code.gs terbaru, lalu buat versi baru pada deployment. Setelah itu klik Sinkron sekarang.</p>
+    <button className="btn small ghost" onClick=${() => Sync.run()}><${Icon} name="sync"/>Sinkron sekarang</button></div>`;
+  const ampuOptions = (v, list) => list.map((p) => html`<option key=${p.id_pengampuan} value=${p.id_pengampuan}>${v.ampuLabel(p)}</option>`);
+
+  /* ---------- Catatan Siswa ---------- */
+  function catatanForm(row, kelasId, v) {
+    const db = Store.snapshotDb();
+    const ids = new Set(v.anggota.filter((a) => !kelasId || a.id_kelas === kelasId).map((a) => a.id_siswa));
+    const students = db.Siswa.filter((s) => ids.has(s.id_siswa) || (row && s.id_siswa === row.id_siswa)).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+    return {
+      title: row ? 'Ubah catatan' : 'Tambah catatan',
+      fields: [{ key: 'id_siswa', label: 'Siswa', type: 'select', options: [['', 'Pilih siswa'], ...students.map((s) => [s.id_siswa, `${s.nama} (${(v.kelas.get(v.kelasOf.get(s.id_siswa)) || {}).nama_kelas || '–'})`])] },
+        { key: 'tanggal', label: 'Tanggal', type: 'date' }, { key: 'kategori', label: 'Kategori', type: 'select', options: Extras.KATEGORI.map((k) => [k, k]) },
+        { key: 'status', label: 'Status', type: 'select', options: [['Terbuka', 'Terbuka'], ['Selesai', 'Selesai']] },
+        { key: 'isi', label: 'Catatan', type: 'textarea', full: true }, { key: 'tindak_lanjut', label: 'Tindak lanjut (boleh kosong)', type: 'textarea', full: true }],
+      initial: row || { id_siswa: '', tanggal: Teaching.ymd(new Date()), kategori: 'Perkembangan', status: 'Terbuka', isi: '', tindak_lanjut: '' },
+      async save(d) {
+        if (!d.id_siswa) return 'Pilih siswa.';
+        if (!d.tanggal) return 'Pilih tanggal.';
+        if (!d.isi.trim()) return 'Isi catatan wajib diisi.';
+        await Store.commit([{ table: 'CatatanSiswa', row: { ...(row || {}), id_catatan: row ? row.id_catatan : Store.uuid(), id_siswa: d.id_siswa, id_pengampuan: row ? row.id_pengampuan : '', tanggal: d.tanggal, kategori: d.kategori, isi: d.isi.trim(), tindak_lanjut: d.tindak_lanjut.trim(), status: d.status } }]);
+        return null;
+      },
+    };
+  }
+
+  function CatatanPage({ ask, toast }) {
+    const v = views();
+    const ready = serverReady(2);
+    const [kelas, setKelas] = useState('');
+    const [kategori, setKategori] = useState('');
+    const [status, setStatus] = useState('Terbuka');
+    const [q, setQ] = useState('');
+    const [form, setForm] = useState(null);
+    const siswa = new Map(Store.active('Siswa').map((s) => [s.id_siswa, s]));
+    const rows = Store.active('CatatanSiswa').filter((c) => {
+      const s = siswa.get(c.id_siswa);
+      return (!kelas || v.kelasOf.get(c.id_siswa) === kelas) && (!kategori || c.kategori === kategori) && (!status || c.status === status)
+        && (!q || fold(`${s ? s.nama : ''} ${c.isi} ${c.tindak_lanjut}`).includes(fold(q)));
+    }).sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+    const toggle = async (c) => { await Store.commit([{ table: 'CatatanSiswa', row: { ...c, status: c.status === 'Selesai' ? 'Terbuka' : 'Selesai' } }]); toast('Status catatan diubah.'); };
+    const remove = (c) => ask({ title: 'Hapus catatan ini?', text: 'Catatan akan dihapus dari aplikasi dan Spreadsheet.', action: 'Hapus catatan', danger: true, onConfirm: async () => { await Store.softDelete([{ table: 'CatatanSiswa', id: c.id_catatan }]); toast('Catatan dihapus.'); } });
+    return html`<div className="page narrow"><header className="page-head"><div><p className="eyebrow">Perkembangan siswa</p><h1>Catatan Siswa</h1></div>
+      <button className="btn primary" disabled=${!ready} onClick=${() => setForm({ row: null })}><${Icon} name="plus"/>Tambah catatan</button></header>
+      ${!ready ? html`<${UpdateNotice}/>` : null}
+      <div className="tools"><input id="cat-cari" type="search" aria-label="Cari catatan" placeholder="Cari siswa atau isi catatan" value=${q} onInput=${(e) => setQ(e.target.value)}/>
+        <select id="cat-kelas" aria-label="Saring kelas" value=${kelas} onChange=${(e) => setKelas(e.target.value)}><option value="">Semua kelas</option>${Store.active('Kelas').map((k) => html`<option key=${k.id_kelas} value=${k.id_kelas}>${k.nama_kelas}</option>`)}</select>
+        <select id="cat-kategori" aria-label="Saring kategori" value=${kategori} onChange=${(e) => setKategori(e.target.value)}><option value="">Semua kategori</option>${Extras.KATEGORI.map((k) => html`<option key=${k} value=${k}>${k}</option>`)}</select>
+        <select id="cat-status" aria-label="Saring status" value=${status} onChange=${(e) => setStatus(e.target.value)}><option value="">Semua status</option><option value="Terbuka">Terbuka</option><option value="Selesai">Selesai</option></select></div>
+      ${rows.length ? html`<ul className="notes">${rows.map((c) => {
+        const s = siswa.get(c.id_siswa);
+        return html`<li key=${c.id_catatan}><div className="history-head"><b>${s ? s.nama : '?'}</b><span><span className=${`chip ${c.kategori === 'Perlu perhatian' ? 'masalah' : (c.kategori === 'Prestasi' ? 'baru' : 'sama')}`}>${c.kategori}</span> <span className=${`chip ${c.status === 'Selesai' ? 'baru' : 'cek'}`}>${c.status}</span></span></div>
+          <p className="muted small">${shortDate(c.tanggal)} · ${(v.kelas.get(v.kelasOf.get(c.id_siswa)) || {}).nama_kelas || '–'}</p><p>${c.isi}</p>${c.tindak_lanjut ? html`<p className="muted">Tindak lanjut: ${c.tindak_lanjut}</p>` : null}
+          <div className="note-actions"><button className="link" onClick=${() => toggle(c)}>${c.status === 'Selesai' ? 'Buka lagi' : 'Tandai selesai'}</button><button className="link" onClick=${() => setForm({ row: c })}>Ubah</button><button className="link danger" onClick=${() => remove(c)}>Hapus</button></div></li>`;
+      })}</ul>` : html`<div className="panel empty"><p>Belum ada catatan yang cocok.</p></div>`}
+      ${form ? html`<${FormModal} model=${catatanForm(form.row, kelas, v)} onClose=${() => setForm(null)} toast=${toast}/>` : null}
+    </div>`;
+  }
+
+  /* ---------- Bank Soal ---------- */
+  function soalForm(row, mapelId, tingkat) {
+    const tps = Teaching.tpList(Store.snapshotDb(), mapelId, tingkat);
+    const blank = { tipe: 'Pilihan ganda', id_tp: '', kesulitan: 'Sedang', soal: '', opsi_a: '', opsi_b: '', opsi_c: '', opsi_d: '', opsi_e: '', kunci: '', pembahasan: '' };
+    return {
+      title: row ? 'Ubah soal' : 'Tambah soal', initial: row ? { ...row, kunci: (row.kunci || '').toUpperCase() } : blank,
+      fields: (d) => [{ key: 'tipe', label: 'Tipe soal', type: 'select', options: Extras.TIPE_SOAL.map((x) => [x, x]) }, { key: 'kesulitan', label: 'Tingkat kesulitan', type: 'select', options: Extras.KESULITAN.map((x) => [x, x]) },
+        ...(tps.length ? [{ key: 'id_tp', label: 'Tujuan Pembelajaran', type: 'select', full: true, options: [['', 'Tidak terkait TP'], ...tps.map((t) => [t.id_tp, `${t.kode_tp} · ${t.deskripsi}`])] }] : []),
+        { key: 'soal', label: 'Soal', type: 'textarea', full: true },
+        ...(d.tipe === 'Pilihan ganda' ? [...Extras.OPSI.map((o) => ({ key: `opsi_${o}`, label: `Opsi ${o.toUpperCase()}` })), { key: 'kunci', label: 'Kunci jawaban', type: 'select', options: [['', 'Pilih'], ...Extras.OPSI.map((o) => [o.toUpperCase(), o.toUpperCase()])] }] : []),
+        { key: 'pembahasan', label: d.tipe === 'Uraian' ? 'Kunci atau pedoman jawaban' : 'Pembahasan (boleh kosong)', type: 'textarea', full: true }],
+      async save(d) {
+        const message = Extras.validateSoal(d);
+        if (message) return message;
+        const others = Store.active('BankSoal').filter((s) => s.id_mapel === mapelId && fold(s.tingkat) === fold(tingkat) && s.id_soal !== (row && row.id_soal));
+        if (others.some((s) => fold(s.soal) === fold(d.soal))) return 'Soal yang sama sudah ada.';
+        const clean = Object.fromEntries(Object.keys(blank).map((k) => [k, String(d[k] || '').trim()]));
+        await Store.commit([{ table: 'BankSoal', row: { ...(row || {}), ...clean, id_soal: row ? row.id_soal : Store.uuid(), id_mapel: mapelId, tingkat, kunci: clean.kunci.toLowerCase() } }]);
+        return null;
+      },
+    };
+  }
+
+  function Worksheet({ rows, mapel, tingkat, onBack, toast }) {
+    const [withKey, setWithKey] = useState(false);
+    const school = Store.setting('sekolah');
+    const print = () => { if (DEMO_BUILD) toast('Cetak aktif setelah aplikasi dipasang di GitHub Pages.', 'info'); else printDoc(`Lembar-Soal-${mapel}`.replace(/[^\w-]+/g, '-'), 'portrait'); };
+    return html`<div className="stack report-page">
+      <div className="tools no-print"><button className="link" onClick=${onBack}>‹ Bank soal</button><label className="check grow"><input type="checkbox" checked=${withKey} onChange=${(e) => setWithKey(e.target.checked)}/> Tampilkan kunci jawaban</label>
+        <button className="btn primary" onClick=${print}><${Icon} name="printer"/>Cetak atau PDF</button></div>
+      <article className="report"><header className="kop"><strong>${school || 'Nama sekolah'}</strong><span>${mapel} · Tingkat ${tingkat}</span></header>
+        <div className="ws-id"><span>Nama: ....................................</span><span>Kelas: ............</span><span>Tanggal: ............</span></div>
+        <ol className="ws-list">${rows.map((s) => html`<li key=${s.id_soal}><p>${s.soal}</p>
+          ${s.tipe === 'Pilihan ganda' ? html`<ol className="ws-options">${Extras.OPSI.filter((o) => s[`opsi_${o}`]).map((o) => html`<li key=${o}>${o.toUpperCase()}. ${s[`opsi_${o}`]}</li>`)}</ol>` : html`<div className="ws-lines"></div>`}
+          ${withKey ? html`<p className="ws-key">Kunci: ${s.tipe === 'Pilihan ganda' ? s.kunci.toUpperCase() : ''}${s.pembahasan ? `${s.tipe === 'Pilihan ganda' ? ' · ' : ''}${s.pembahasan}` : ''}</p>` : null}</li>`)}</ol>
+      </article></div>`;
+  }
+
+  function BankSoalPage({ ask, toast, openImport, go }) {
+    const { v, list } = teachingContext();
+    const ready = serverReady(2);
+    const mapels = [...new Map(list.map((p) => [p.id_mapel, v.mapel.get(p.id_mapel)])).values()].filter(Boolean);
+    const [mapelId, setMapelId] = useState(mapels[0] ? mapels[0].id_mapel : '');
+    const levels = [...new Set(list.filter((p) => p.id_mapel === mapelId).map((p) => (v.kelas.get(p.id_kelas) || {}).tingkat).filter(Boolean))];
+    const [picked, setPicked] = useState('');
+    const tingkat = levels.includes(picked) ? picked : (levels[0] || '');
+    const [tp, setTp] = useState('');
+    const [level, setLevel] = useState('');
+    const [q, setQ] = useState('');
+    const [chosen, setChosen] = useState(new Set());
+    const [form, setForm] = useState(null);
+    const [sheet, setSheet] = useState(false);
+    const tps = Teaching.tpList(Store.snapshotDb(), mapelId, tingkat);
+    const all = Store.active('BankSoal').filter((s) => s.id_mapel === mapelId && fold(s.tingkat) === fold(tingkat));
+    const rows = all.filter((s) => (!tp || s.id_tp === tp) && (!level || s.kesulitan === level) && (!q || fold(s.soal).includes(fold(q))));
+    const toggle = (id) => { const n = new Set(chosen); if (n.has(id)) n.delete(id); else n.add(id); setChosen(n); };
+    const remove = (s) => ask({ title: 'Hapus soal ini?', text: 'Soal akan dihapus dari bank soal.', action: 'Hapus soal', danger: true, onConfirm: async () => { await Store.softDelete([{ table: 'BankSoal', id: s.id_soal }]); toast('Soal dihapus.'); } });
+    const selected = all.filter((s) => chosen.has(s.id_soal));
+    if (sheet && selected.length) return html`<div className="page narrow report-page"><${Worksheet} rows=${selected} mapel=${(v.mapel.get(mapelId) || {}).nama_mapel || ''} tingkat=${tingkat} toast=${toast} onBack=${() => setSheet(false)}/></div>`;
+    const tpName = (id) => (tps.find((t) => t.id_tp === id) || {}).kode_tp;
+    return html`<div className="page"><header className="page-head"><div><p className="eyebrow">Perangkat Ajar</p><h1>Bank Soal</h1></div>
+      <div className="head-actions"><button className="btn ghost" disabled=${!ready} onClick=${() => openImport('soal')}><${Icon} name="upload"/>Import</button><button className="btn primary" disabled=${!ready || !tingkat} onClick=${() => setForm({ row: null })}><${Icon} name="plus"/>Tambah soal</button></div></header>
+      ${!ready ? html`<${UpdateNotice}/>` : null}
+      ${!list.length ? html`<${NeedSetup} go=${go}/>` : html`
+      <div className="report-tools">
+        <label className="field" htmlFor="bs-mapel"><span>Mapel</span><select id="bs-mapel" value=${mapelId} onChange=${(e) => { setMapelId(e.target.value); setChosen(new Set()); setTp(''); }}>${mapels.map((m) => html`<option key=${m.id_mapel} value=${m.id_mapel}>${m.nama_mapel}</option>`)}</select></label>
+        <label className="field" htmlFor="bs-tingkat"><span>Tingkat</span><select id="bs-tingkat" value=${tingkat} onChange=${(e) => { setPicked(e.target.value); setChosen(new Set()); setTp(''); }}>${levels.map((l) => html`<option key=${l} value=${l}>${l}</option>`)}</select></label>
+        <label className="field" htmlFor="bs-tp"><span>TP</span><select id="bs-tp" value=${tp} onChange=${(e) => setTp(e.target.value)}><option value="">Semua TP</option>${tps.map((t) => html`<option key=${t.id_tp} value=${t.id_tp}>${t.kode_tp}</option>`)}</select></label>
+        <label className="field" htmlFor="bs-level"><span>Kesulitan</span><select id="bs-level" value=${level} onChange=${(e) => setLevel(e.target.value)}><option value="">Semua</option>${Extras.KESULITAN.map((k) => html`<option key=${k} value=${k}>${k}</option>`)}</select></label>
+      </div>
+      <div className="tools"><input id="bs-cari" type="search" aria-label="Cari soal" placeholder="Cari isi soal" value=${q} onInput=${(e) => setQ(e.target.value)}/><span className="muted small">${num(rows.length)} soal</span></div>
+      ${rows.length ? html`<ol className="questions">${rows.map((s) => html`<li key=${s.id_soal}><input type="checkbox" aria-label="Pilih soal" checked=${chosen.has(s.id_soal)} onChange=${() => toggle(s.id_soal)}/>
+        <div className="tp-body"><p>${s.soal} ${s.id_import === SAMPLE_MARK ? html`<span className="tag">Contoh</span>` : null}</p>
+          ${s.tipe === 'Pilihan ganda' ? html`<p className="muted small">${Extras.OPSI.filter((o) => s[`opsi_${o}`]).map((o) => `${o.toUpperCase()}. ${s[`opsi_${o}`]}`).join('   ')}</p>` : null}
+          <p className="small"><span className="chip sama">${s.tipe}</span> <span className=${`chip ${s.kesulitan === 'Sulit' ? 'masalah' : (s.kesulitan === 'Mudah' ? 'baru' : 'cek')}`}>${s.kesulitan}</span>${s.tipe === 'Pilihan ganda' ? ` Kunci ${s.kunci.toUpperCase()}` : ''}${tpName(s.id_tp) ? ` · ${tpName(s.id_tp)}` : ''}</p></div>
+        <div className="row-actions"><button className="link" onClick=${() => setForm({ row: s })}>Ubah</button><button className="link danger" onClick=${() => remove(s)}>Hapus</button></div></li>`)}</ol>`
+      : html`<div className="panel empty"><p>Belum ada soal yang cocok. Tambahkan satu per satu, atau import dari Excel.</p></div>`}
+      ${chosen.size ? html`<div className="save-bar"><div className="tally"><span><b>${num(selected.length)}</b> soal dipilih</span></div><button className="btn primary" disabled=${!selected.length} onClick=${() => setSheet(true)}>Buat lembar soal</button></div>` : null}`}
+      ${form ? html`<${FormModal} model=${soalForm(form.row, mapelId, tingkat)} onClose=${() => setForm(null)} toast=${toast}/>` : null}
+    </div>`;
+  }
+
+  /* ---------- Analisis Nilai ---------- */
+  function Distribution({ data }) {
+    const max = Math.max(1, ...data.map((d) => d.count));
+    return html`<div className="histogram" role="img" aria-label=${`Sebaran nilai akhir: ${data.map((d) => `${d.label} ${d.count} siswa`).join(', ')}`}>${data.map((d) => html`
+      <div key=${d.label} className="hist-col" title=${`${d.label}: ${d.count} siswa`}><b>${d.count}</b><div className="hist-track"><i style=${{ height: `${(d.count / max) * 100}%` }}></i></div><span>${d.label}</span></div>`)}</div>`;
+  }
+
+  function AnalisisPage({ session, go, openSession }) {
+    const { v, db, list } = teachingContext();
+    const [id, setId] = useState(session.id_pengampuan);
+    const ampu = v.ampuMap.get(id);
+    const data = ampu ? Extras.analyze(db, ampu, remedialRule()) : null;
+    return html`<div className="page"><header className="page-head"><div><p className="eyebrow">Penilaian</p><h1>Analisis Nilai</h1></div></header>
+      ${!list.length ? html`<${NeedSetup} go=${go}/>` : html`
+      <label className="field grade-select" htmlFor="an-ampu"><span>Mapel dan kelas</span><select id="an-ampu" value=${id} onChange=${(e) => setId(e.target.value)}>${ampuOptions(v, list)}</select></label>
+      ${data && data.items.length ? html`
+      <div className="tiles recap-tiles"><div><b>${score(data.rata)}</b><span>Rata-rata akhir</span></div><div className="baru"><b>${num(data.tuntas)}</b><span>Tuntas</span></div><div className="masalah"><b>${num(data.belum)}</b><span>Belum tuntas</span></div><div className="cek"><b>${num(data.support.length)}</b><span>Perlu bantuan</span></div></div>
+      <div className="home-grid">
+        <section className="panel"><div className="panel-head"><h2>Sebaran nilai akhir</h2><span className="muted small">Jumlah siswa, KKTP ${score(data.kktp)}</span></div><${Distribution} data=${data.distribution}/></section>
+        <section className="panel"><div className="panel-head"><h2>Penilaian tersulit</h2><span className="muted small">Rata-rata terendah</span></div>
+          <ul className="bars">${data.hardest.map((x) => html`<li key=${x.penilaian.id_penilaian} title=${`${x.penilaian.nama}: rata-rata ${score(x.rata)}, ${x.below} siswa di bawah KKTP`}>
+            <div className="bar-label"><span>${x.penilaian.nama}</span><b>${score(x.rata)}</b></div>
+            <div className="bar-track"><i style=${{ width: `${Math.min(100, x.rata)}%` }}></i><u style=${{ left: `${Math.min(100, data.kktp)}%` }} aria-hidden="true"></u></div>
+            <span className="muted small">${num(x.below)} dari ${num(x.filled)} siswa di bawah KKTP</span></li>`)}</ul></section>
+      </div>
+      <section className="panel"><div className="panel-head"><h2>Siswa perlu bantuan</h2><span className="muted small">${num(data.support.length)} siswa</span></div>
+        ${data.support.length ? html`<ul className="support">${data.support.map((s) => html`<li key=${s.id_siswa}><b>${s.nama}</b><span className="support-reasons">${s.reasons.map((r) => html`<span key=${r} className="chip cek">${r}</span>`)}</span></li>`)}</ul>` : html`<p className="muted">Belum ada siswa yang perlu bantuan khusus.</p>`}</section>
+      ${data.tpStats.length ? html`<section className="panel"><div className="panel-head"><h2>Capaian per TP</h2></div>
+        <div className="report-scroll"><table className="recap-table"><thead><tr><th>TP</th><th>Deskripsi</th><th className="num">Penilaian</th><th className="num">Rata-rata</th></tr></thead><tbody>${data.tpStats.map((x) => html`<tr key=${x.tp.id_tp}><td className="nowrap">${x.tp.kode_tp}</td><td>${x.tp.deskripsi}</td><td className="num">${num(x.count)}</td><td className=${`num ${x.rata !== null && x.rata < data.kktp ? 'alert' : ''}`}>${score(x.rata)}</td></tr>`)}</tbody></table></div></section>` : null}
+      <p className="muted small">Analisis per penilaian dan TP. Analisis per butir soal belum tersedia karena nilai dimasukkan sebagai total.</p>`
+      : html`<div className="panel empty"><p>Tambahkan penilaian dan isi nilainya dulu.</p><button className="btn small ghost" onClick=${() => openSession('nilai', { ...session, id_pengampuan: id })}>Buka Penilaian</button></div>`}`}
+    </div>`;
+  }
+
+  /* ---------- Kalender Akademik ---------- */
+  const EVENT_TONE = { Libur: 'masalah', Ujian: 'cek', Kegiatan: 'berubah' };
+  function kalenderForm(row) {
+    const today = Teaching.ymd(new Date());
+    return {
+      title: row ? 'Ubah agenda' : 'Tambah agenda',
+      fields: [{ key: 'judul', label: 'Nama agenda', full: true }, { key: 'jenis', label: 'Jenis', type: 'select', options: Extras.JENIS_KALENDER.map((j) => [j, j]) }, { key: 'tanggal_mulai', label: 'Tanggal mulai', type: 'date' }, { key: 'tanggal_selesai', label: 'Tanggal selesai', type: 'date' }, { key: 'keterangan', label: 'Keterangan (boleh kosong)', type: 'textarea', full: true }],
+      initial: row || { judul: '', jenis: 'Libur', tanggal_mulai: today, tanggal_selesai: today, keterangan: '' },
+      async save(d) {
+        if (!d.judul.trim()) return 'Nama agenda wajib diisi.';
+        if (!d.tanggal_mulai) return 'Pilih tanggal mulai.';
+        const end = d.tanggal_selesai || d.tanggal_mulai;
+        if (end < d.tanggal_mulai) return 'Tanggal selesai tidak boleh sebelum tanggal mulai.';
+        await Store.commit([{ table: 'Kalender', row: { ...(row || {}), id_kalender: row ? row.id_kalender : Store.uuid(), judul: d.judul.trim(), jenis: d.jenis, tanggal_mulai: d.tanggal_mulai, tanggal_selesai: end, keterangan: d.keterangan.trim() } }]);
+        return null;
+      },
+    };
+  }
+
+  function KalenderPage({ ask, toast, openImport }) {
+    const ready = serverReady(2);
+    const db = Store.snapshotDb();
+    const now = new Date();
+    const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 });
+    const [form, setForm] = useState(null);
+    const [days, setDays] = useState(Store.setting('hari_sekolah', '6'));
+    const shift = (n) => setYm(({ y, m }) => { const d = new Date(y, m - 1 + n, 1); return { y: d.getFullYear(), m: d.getMonth() + 1 }; });
+    const first = `${ym.y}-${String(ym.m).padStart(2, '0')}-01`;
+    const last = Extras.monthGrid(ym.y, ym.m).filter(Boolean).pop();
+    const today = Teaching.ymd(now);
+    const events = db.Kalender.filter((k) => (k.tanggal_selesai || k.tanggal_mulai) >= first && k.tanggal_mulai <= last).sort((a, b) => a.tanggal_mulai.localeCompare(b.tanggal_mulai));
+    const remove = (k) => ask({ title: 'Hapus agenda ini?', text: k.judul, action: 'Hapus agenda', danger: true, onConfirm: async () => { await Store.softDelete([{ table: 'Kalender', id: k.id_kalender }]); toast('Agenda dihapus.'); } });
+    const range = (k) => (k.tanggal_mulai === k.tanggal_selesai ? shortDate(k.tanggal_mulai) : `${shortDate(k.tanggal_mulai)} s.d. ${shortDate(k.tanggal_selesai)}`);
+    return html`<div className="page"><header className="page-head"><div><p className="eyebrow">Hari efektif dan agenda</p><h1>Kalender Akademik</h1></div>
+      <div className="head-actions"><button className="btn ghost" disabled=${!ready} onClick=${() => openImport('kalender')}><${Icon} name="upload"/>Import</button><button className="btn primary" disabled=${!ready} onClick=${() => setForm({ row: null })}><${Icon} name="plus"/>Tambah agenda</button></div></header>
+      ${!ready ? html`<${UpdateNotice}/>` : null}
+      <div className="home-grid cal-grid">
+        <section className="panel"><div className="cal-head"><button className="icon-btn" aria-label="Bulan sebelumnya" onClick=${() => shift(-1)}>‹</button><h2>${Teaching.parseYmd(first).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</h2><button className="icon-btn" aria-label="Bulan berikutnya" onClick=${() => shift(1)}>›</button></div>
+          <div className="cal"><${React.Fragment}>${['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((d) => html`<span key=${d} className="cal-day">${d}</span>`)}<//>
+            ${Extras.monthGrid(ym.y, ym.m).map((t, i) => {
+              if (!t) return html`<span key=${`x${i}`}></span>`;
+              const list = Extras.eventsOn(db, t);
+              const kind = list.find((k) => k.jenis === 'Libur') ? 'Libur' : (list[0] ? list[0].jenis : '');
+              return html`<span key=${t} className=${`cal-cell ${t === today ? 'today' : ''} ${kind ? EVENT_TONE[kind] : ''}`} title=${list.map((k) => k.judul).join(', ')}>${Number(t.slice(8))}</span>`;
+            })}</div>
+          <p className="muted small"><span className="cal-key masalah"></span>Libur <span className="cal-key cek"></span>Ujian <span className="cal-key berubah"></span>Kegiatan</p></section>
+        <section className="panel"><div className="panel-head"><h2>Hari efektif</h2></div>
+          <div className="tiles one"><div><b>${num(Extras.effectiveDays(db, ym.y, ym.m, Number(days)))}</b><span>Hari efektif bulan ini</span></div></div>
+          <label className="field" htmlFor="kal-hari"><span>Hari sekolah</span><select id="kal-hari" value=${days} onChange=${async (e) => { setDays(e.target.value); await Store.saveSettings({ hari_sekolah: e.target.value }); }}><option value="5">Senin sampai Jumat</option><option value="6">Senin sampai Sabtu</option></select></label></section>
+      </div>
+      ${events.length ? html`<ul className="notes">${events.map((k) => html`<li key=${k.id_kalender}><div className="history-head"><b>${k.judul}</b><span><span className=${`chip ${EVENT_TONE[k.jenis]}`}>${k.jenis}</span>${k.id_import === SAMPLE_MARK ? html` <span className="tag">Contoh</span>` : null}</span></div><p className="muted small">${range(k)}</p>${k.keterangan ? html`<p>${k.keterangan}</p>` : null}
+        <div className="note-actions"><button className="link" onClick=${() => setForm({ row: k })}>Ubah</button><button className="link danger" onClick=${() => remove(k)}>Hapus</button></div></li>`)}</ul>` : html`<div className="panel empty"><p>Belum ada agenda bulan ini.</p></div>`}
+      ${form ? html`<${FormModal} model=${kalenderForm(form.row)} onClose=${() => setForm(null)} toast=${toast}/>` : null}
+    </div>`;
+  }
+
+  /* ---------- Tugas Siswa ---------- */
+  function tugasForm(row, ampu) {
+    const today = Teaching.ymd(new Date());
+    return {
+      title: row ? 'Ubah tugas' : 'Tambah tugas',
+      fields: [{ key: 'judul', label: 'Judul tugas', full: true }, { key: 'tanggal_beri', label: 'Tanggal diberikan', type: 'date' }, { key: 'tenggat', label: 'Batas pengumpulan', type: 'date' }, { key: 'deskripsi', label: 'Deskripsi (boleh kosong)', type: 'textarea', full: true }],
+      initial: row || { judul: '', tanggal_beri: today, tenggat: Teaching.addDays(today, 7), deskripsi: '' },
+      async save(d) {
+        if (!d.judul.trim()) return 'Judul tugas wajib diisi.';
+        if (!d.tanggal_beri || !d.tenggat) return 'Isi tanggal diberikan dan batas pengumpulan.';
+        if (d.tenggat < d.tanggal_beri) return 'Batas pengumpulan tidak boleh sebelum tanggal diberikan.';
+        await Store.commit([{ table: 'Tugas', row: { ...(row || {}), id_tugas: row ? row.id_tugas : Store.uuid(), id_pengampuan: ampu.id_pengampuan, judul: d.judul.trim(), deskripsi: d.deskripsi.trim(), tanggal_beri: d.tanggal_beri, tenggat: d.tenggat, id_penilaian: row ? row.id_penilaian : '' } }]);
+        return null;
+      },
+    };
+  }
+
+  function TugasDetail({ tugas, ampu, onBack, ask, toast, guard }) {
+    const load = () => Object.fromEntries(Extras.taskRows(Store.snapshotDb(), tugas, ampu).map((r) => [r.siswa.id_siswa, { tanggal_kumpul: r.row ? r.row.tanggal_kumpul : '', catatan: r.row ? r.row.catatan || '' : '' }]));
+    const [rows] = useState(() => Extras.taskRows(Store.snapshotDb(), tugas, ampu));
+    const [form, setForm] = useState(load);
+    const [dirty, setDirty] = useState(false);
+    const [edit, setEdit] = useState(false);
+    useEffect(() => { unsaved.current = dirty; return () => { unsaved.current = false; }; }, [dirty]);
+    const today = Teaching.ymd(new Date());
+    const set = (id, patch) => { setForm((f) => ({ ...f, [id]: { ...f[id], ...patch } })); setDirty(true); };
+    const state = (f) => (!f.tanggal_kumpul ? 'Belum' : (f.tanggal_kumpul > tugas.tenggat ? 'Terlambat' : 'Tepat waktu'));
+    const tone = { Belum: 'sama', Terlambat: 'cek', 'Tepat waktu': 'baru' };
+    const list = Object.values(form);
+    const n = (s) => list.filter((f) => state(f) === s).length;
+    const save = async () => { await Store.commit(Extras.saveKumpul(Store.snapshotDb(), tugas, rows.map((r) => ({ id_siswa: r.siswa.id_siswa, ...form[r.siswa.id_siswa] })))); setDirty(false); toast('Pengumpulan tersimpan.'); };
+    const makeAssessment = async () => {
+      const id = Store.uuid();
+      await Store.commit([{ table: 'Penilaian', row: { id_penilaian: id, id_pengampuan: ampu.id_pengampuan, id_tp: '', jenis: 'Tugas', nama: tugas.judul, tanggal: tugas.tenggat, nilai_maks: '100' } }, { table: 'Tugas', row: { ...tugas, id_penilaian: id } }]);
+      toast('Penilaian dibuat. Isi nilainya di menu Penilaian.');
+    };
+    const remove = () => ask({ title: 'Hapus tugas ini?', text: 'Data pengumpulan juga akan dihapus. Penilaian yang sudah dibuat tetap ada.', action: 'Hapus tugas', danger: true, onConfirm: async () => { await Store.commit(Extras.deleteTugas(Store.snapshotDb(), tugas.id_tugas)); unsaved.current = false; toast('Tugas dihapus.'); onBack(); } });
+    const current = Store.rawRow('Tugas', tugas.id_tugas) || tugas;
+    return html`<div className="stack">
+      <div className="entry-head"><button className="link" onClick=${() => guard(onBack)}>‹ Daftar tugas</button>
+        <div className="grow"><h2>${tugas.judul}</h2><p className="muted small">Batas ${shortDate(tugas.tenggat)}${tugas.deskripsi ? ` · ${tugas.deskripsi}` : ''}</p></div>
+        <div className="row-btns"><button className="btn small ghost" onClick=${() => setEdit(true)}>Ubah</button>${current.id_penilaian ? null : html`<button className="btn small ghost" onClick=${makeAssessment}>Buat penilaian</button>`}</div></div>
+      <div className="tools"><span className="grow"></span><button className="btn small ghost" onClick=${() => { const next = { ...form }; Object.keys(next).forEach((id) => { if (!next[id].tanggal_kumpul) next[id] = { ...next[id], tanggal_kumpul: today > tugas.tenggat ? tugas.tenggat : today }; }); setForm(next); setDirty(true); }}>Semua terkumpul</button></div>
+      <ol className="scores tasks">${rows.map((r, i) => {
+        const f = form[r.siswa.id_siswa];
+        return html`<li key=${r.siswa.id_siswa}><span className="mono no-cell">${i + 1}</span><div className="score-name"><b>${r.siswa.nama}</b><span className=${`chip ${tone[state(f)]}`}>${state(f)}</span></div>
+          <label className="check"><input type="checkbox" aria-label=${`Terkumpul ${r.siswa.nama}`} checked=${!!f.tanggal_kumpul} onChange=${(e) => set(r.siswa.id_siswa, { tanggal_kumpul: e.target.checked ? today : '' })}/> Terkumpul</label>
+          <label className="mini" htmlFor=${`k-${r.siswa.id_siswa}`}><span>Tanggal kumpul</span><input id=${`k-${r.siswa.id_siswa}`} type="date" disabled=${!f.tanggal_kumpul} value=${f.tanggal_kumpul} onChange=${(e) => set(r.siswa.id_siswa, { tanggal_kumpul: e.target.value })}/></label></li>`;
+      })}</ol>
+      <div className="save-bar"><div className="tally"><span><b>${num(n('Tepat waktu'))}</b> tepat waktu</span><span><b>${num(n('Terlambat'))}</b> terlambat</span><span><b>${num(n('Belum'))}</b> belum</span></div>
+        <button className="link danger" onClick=${remove}>Hapus tugas</button><button className="btn primary" disabled=${!dirty} onClick=${save}>Simpan pengumpulan</button></div>
+      ${edit ? html`<${FormModal} model=${tugasForm(current, ampu)} onClose=${() => setEdit(false)} toast=${toast}/>` : null}
+    </div>`;
+  }
+
+  function TugasPage({ session, setSession, ask, toast, go, guard }) {
+    const { v, db, list } = teachingContext();
+    const ready = serverReady(2);
+    const [openId, setOpenId] = useState(null);
+    const [form, setForm] = useState(false);
+    const ampu = v.ampuMap.get(session.id_pengampuan);
+    const items = ampu ? db.Tugas.filter((t) => t.id_pengampuan === ampu.id_pengampuan).sort((a, b) => b.tenggat.localeCompare(a.tenggat)) : [];
+    const opened = items.find((t) => t.id_tugas === openId);
+    const today = Teaching.ymd(new Date());
+    return html`<div className="page"><header className="page-head"><div><p className="eyebrow">Pengumpulan tugas</p><h1>Tugas Siswa</h1></div>
+      ${ampu && !opened ? html`<button className="btn primary" disabled=${!ready} onClick=${() => setForm(true)}><${Icon} name="plus"/>Tambah tugas</button>` : null}</header>
+      ${!ready ? html`<${UpdateNotice}/>` : null}
+      ${!list.length ? html`<${NeedSetup} go=${go}/>` : opened ? html`<${TugasDetail} key=${`${opened.id_tugas}${opened.updated_at}`} tugas=${opened} ampu=${ampu} ask=${ask} toast=${toast} guard=${guard} onBack=${() => setOpenId(null)}/>` : html`
+      <label className="field grade-select" htmlFor="tg-ampu"><span>Mapel dan kelas</span><select id="tg-ampu" value=${session.id_pengampuan} onChange=${(e) => setSession({ ...session, id_pengampuan: e.target.value })}>${ampuOptions(v, list)}</select></label>
+      ${items.length ? html`<ul className="history">${items.map((t) => {
+        const st = Extras.taskStats(db, t, ampu);
+        const late = t.tenggat < today && st.belum;
+        return html`<li key=${t.id_tugas}><button onClick=${() => setOpenId(t.id_tugas)}><span className="history-head"><b>${t.judul}</b>${late ? html`<span className="chip cek">${num(st.belum)} belum kumpul</span>` : null}</span>
+          <span className="muted small">Batas ${shortDate(t.tenggat)} · ${num(st.tepat + st.terlambat)} dari ${num(st.total)} terkumpul${st.terlambat ? ` · ${num(st.terlambat)} terlambat` : ''}</span></button></li>`;
+      })}</ul>` : html`<div className="panel empty"><p>Belum ada tugas untuk kelas ini.</p></div>`}`}
+      ${form ? html`<${FormModal} model=${tugasForm(null, ampu)} onClose=${() => setForm(false)} toast=${toast}/>` : null}
+    </div>`;
+  }
+
   /* ---------- Kerangka ---------- */
   function App() {
     useStoreVersion();
@@ -1412,8 +1739,8 @@
     const go = (p, t) => guard(() => leave(p, t));
     const openSession = (p, s) => guard(() => { setSession(s); leave(p); });
     const current = session && session.id_pengampuan ? session : defaultSession();
-    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['nilai', 'Penilaian', 'grade'], ['perangkat', 'Perangkat Ajar', 'book'], ['laporan', 'Laporan', 'report'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
-    const extra = ['perangkat', 'laporan', 'data', 'settings'];
+    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['nilai', 'Penilaian', 'grade'], ['tugas', 'Tugas Siswa', 'task'], ['catatan', 'Catatan Siswa', 'note'], ['perangkat', 'Perangkat Ajar', 'book'], ['bank', 'Bank Soal', 'bank'], ['analisis', 'Analisis Nilai', 'chart'], ['kalender', 'Kalender', 'calendar'], ['laporan', 'Laporan', 'report'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
+    const extra = ['tugas', 'catatan', 'perangkat', 'bank', 'analisis', 'kalender', 'laporan', 'data', 'settings'];
     const needLogin = Sync.status.phase === 'perlu-login';
     return html`<div className="shell">
       <aside className="side">
@@ -1428,6 +1755,11 @@
         ${page === 'presensi' ? html`<${PresensiPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard}/>` : null}
         ${page === 'jurnal' ? html`<${JurnalPage} session=${current} setSession=${setSession} toast=${toast} go=${go} guard=${guard} openSession=${openSession}/>` : null}
         ${page === 'nilai' ? html`<${PenilaianPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard} openImport=${setImportKind}/>` : null}
+        ${page === 'tugas' ? html`<${TugasPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard}/>` : null}
+        ${page === 'catatan' ? html`<${CatatanPage} ask=${ask} toast=${toast}/>` : null}
+        ${page === 'bank' ? html`<${BankSoalPage} ask=${ask} toast=${toast} openImport=${setImportKind} go=${go}/>` : null}
+        ${page === 'analisis' ? html`<${AnalisisPage} session=${current} go=${go} openSession=${openSession}/>` : null}
+        ${page === 'kalender' ? html`<${KalenderPage} ask=${ask} toast=${toast} openImport=${setImportKind}/>` : null}
         ${page === 'perangkat' ? html`<${PerangkatPage} session=${current} ask=${ask} toast=${toast} go=${go} openImport=${setImportKind} openSession=${openSession}/>` : null}
         ${page === 'laporan' ? html`<${LaporanPage} session=${current} toast=${toast} go=${go}/>` : null}
         ${page === 'data' ? html`<${Master} tab=${tab} setTab=${setTab} openImport=${setImportKind} ask=${ask} toast=${toast}/>` : null}

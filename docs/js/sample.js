@@ -28,6 +28,14 @@
     add('AnggotaKelas', anggota); add('Pengampuan', ampu); add('Jadwal', jadwal);
     add('TP', [['TP 1.1', 'Menjelaskan konsep dasar materi pertama.', '2'], ['TP 1.2', 'Menerapkan konsep pada contoh sehari-hari.', '1'], ['TP 2.1', 'Menganalisis hubungan antarkonsep.', '2']]
       .map(([kode, deskripsi, target], i) => ({ id_tp: `contoh-tp-${i + 1}`, id_mapel: 'contoh-mapel-A', tingkat: 'VII', kode_tp: kode, deskripsi, urutan: String(i + 1), target_pertemuan: target, tautan_modul: '', ...mark })));
+    add('BankSoal', [
+      { id_soal: 'contoh-soal-1', id_mapel: 'contoh-mapel-A', tingkat: 'VII', id_tp: 'contoh-tp-1', tipe: 'Pilihan ganda', kesulitan: 'Mudah', soal: 'Contoh soal: pernyataan mana yang benar tentang konsep pertama?', opsi_a: 'Pernyataan pertama', opsi_b: 'Pernyataan kedua', opsi_c: 'Pernyataan ketiga', opsi_d: 'Pernyataan keempat', opsi_e: '', kunci: 'b', pembahasan: 'Contoh pembahasan singkat.', ...mark },
+      { id_soal: 'contoh-soal-2', id_mapel: 'contoh-mapel-A', tingkat: 'VII', id_tp: 'contoh-tp-2', tipe: 'Uraian', kesulitan: 'Sedang', soal: 'Contoh soal: jelaskan penerapan konsep dalam kehidupan sehari-hari.', opsi_a: '', opsi_b: '', opsi_c: '', opsi_d: '', opsi_e: '', kunci: '', pembahasan: 'Jawaban memuat satu contoh dan alasannya.', ...mark },
+    ]);
+    add('Kalender', [
+      { id_kalender: 'contoh-kal-1', judul: 'Contoh penilaian akhir semester', jenis: 'Ujian', tanggal_mulai: '2026-12-07', tanggal_selesai: '2026-12-12', keterangan: '', ...mark },
+      { id_kalender: 'contoh-kal-2', judul: 'Contoh libur semester', jenis: 'Libur', tanggal_mulai: '2026-12-21', tanggal_selesai: '2027-01-02', keterangan: '', ...mark },
+    ]);
     return out;
   }
 

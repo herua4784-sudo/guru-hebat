@@ -1,9 +1,9 @@
 /* Menyimpan file aplikasi agar bisa dibuka tanpa internet.
    File lama langsung ditampilkan, lalu diperbarui di latar belakang untuk pembukaan berikutnya. */
-const CACHE = 'guru-mapel-v5';
+const CACHE = 'guru-mapel-v6';
 const FILES = [
   './', 'index.html', 'styles.css', 'config.js', 'manifest.webmanifest',
-  'js/schema.js', 'js/store.js', 'js/sync.js', 'js/importer.js', 'js/sample.js', 'js/teaching.js', 'js/reports.js', 'js/app.js',
+  'js/schema.js', 'js/store.js', 'js/sync.js', 'js/importer.js', 'js/sample.js', 'js/teaching.js', 'js/reports.js', 'js/extras.js', 'js/app.js',
   'vendor/react.production.min.js', 'vendor/react-dom.production.min.js', 'vendor/htm.umd.js', 'vendor/xlsx.full.min.js',
   'vendor/fonts/plus-jakarta-sans-latin-wght-normal.woff2', 'vendor/fonts/ibm-plex-mono-latin-500-normal.woff2',
   'icons/icon-192.png', 'icons/icon-512.png',

@@ -61,6 +61,25 @@
     { key: 'target_pertemuan', label: 'target_pertemuan', ex: '2', note: 'Kosongkan untuk 1 pertemuan', aliases: ['target', 'jp'] },
     { key: 'tautan_modul', label: 'tautan_modul', ex: 'https://drive.google.com/...', aliases: ['modul', 'link_modul', 'tautan'] },
   ] };
+  KINDS.soal = { label: 'Bank Soal', sheet: 'BankSoal', table: 'BankSoal', cols: [
+    { key: 'mapel', label: 'mapel', req: true, ex: 'Matematika', aliases: ['nama_mapel', 'mata_pelajaran'] },
+    { key: 'tingkat', label: 'tingkat', req: true, ex: 'VII' },
+    { key: 'kode_tp', label: 'kode_tp', ex: 'TP 1.1', text: true, note: 'Boleh kosong' },
+    { key: 'tipe', label: 'tipe', ex: 'Pilihan ganda', note: 'Pilihan ganda atau Uraian. Kosong = Pilihan ganda' },
+    { key: 'kesulitan', label: 'kesulitan', ex: 'Sedang', note: 'Mudah, Sedang, atau Sulit. Kosong = Sedang' },
+    { key: 'soal', label: 'soal', req: true, ex: 'Hasil 2 + 3 adalah', aliases: ['pertanyaan'] },
+    { key: 'opsi_a', label: 'opsi_a', ex: '4', aliases: ['a'] }, { key: 'opsi_b', label: 'opsi_b', ex: '5', aliases: ['b'] },
+    { key: 'opsi_c', label: 'opsi_c', ex: '6', aliases: ['c'] }, { key: 'opsi_d', label: 'opsi_d', ex: '7', aliases: ['d'] }, { key: 'opsi_e', label: 'opsi_e', ex: '', aliases: ['e'] },
+    { key: 'kunci', label: 'kunci', ex: 'B', note: 'A sampai E untuk Pilihan ganda', aliases: ['jawaban', 'kunci_jawaban'] },
+    { key: 'pembahasan', label: 'pembahasan', ex: '2 + 3 = 5' },
+  ] };
+  KINDS.kalender = { label: 'Kalender', sheet: 'Kalender', table: 'Kalender', cols: [
+    { key: 'judul', label: 'judul', req: true, ex: 'Libur semester', aliases: ['agenda', 'nama_agenda', 'kegiatan'] },
+    { key: 'jenis', label: 'jenis', req: true, ex: 'Libur', note: 'Libur, Ujian, atau Kegiatan' },
+    { key: 'tanggal_mulai', label: 'tanggal_mulai', req: true, ex: '21/12/2026', text: true, aliases: ['mulai', 'tanggal'] },
+    { key: 'tanggal_selesai', label: 'tanggal_selesai', ex: '02/01/2027', text: true, note: 'Kosongkan untuk satu hari', aliases: ['selesai'] },
+    { key: 'keterangan', label: 'keterangan', ex: '' },
+  ] };
   const ORDER = ['tahun', 'mapel', 'kelas', 'siswa', 'pengampuan', 'jadwal'];
 
   /* ---------- Bantuan ---------- */
@@ -115,6 +134,22 @@
     const m = text(nama).match(/^([IVX]+|\d{1,2})(?=[\s\-./]|$)/i);
     return m ? m[1].toUpperCase() : '';
   };
+  function normDate(v) {
+    const pad2 = (n) => String(n).padStart(2, '0');
+    if (typeof v === 'number' && v > 20000 && v < 80000) {
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+      return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+    }
+    const s = text(v);
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    const build = (y, mo, d) => {
+      const date = new Date(y, mo - 1, d);
+      return date.getFullYear() === y && date.getMonth() === mo - 1 && date.getDate() === d ? `${y}-${pad2(mo)}-${pad2(d)}` : '';
+    };
+    if (m) return build(Number(m[1]), Number(m[2]), Number(m[3]));
+    m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    return m ? build(Number(m[3]), Number(m[2]), Number(m[1])) : '';
+  }
   const overlap = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
 
   function newUuid() {
@@ -473,6 +508,59 @@
     return finish(res, row, ctx, 'berubah', fields, () => upsert(work, ctx, 'TP', { ...existing, ...next }));
   };
 
+  analyzers.soal = function soal(row, res, work, ctx) {
+    const mapel = work.Mapel.find((m) => fold(m.nama_mapel) === fold(row.data.mapel) || (text(m.kode) && fold(m.kode) === fold(row.data.mapel)));
+    const level = work.Kelas.find((k) => fold(k.tingkat) === fold(row.data.tingkat));
+    if (!mapel) res.errors.push(`Mapel ${text(row.data.mapel) || '(kosong)'} belum terdaftar.`);
+    if (!level) res.errors.push(`Tingkat ${text(row.data.tingkat) || '(kosong)'} tidak ada pada data Kelas.`);
+    const X = root.GM.Extras;
+    const tipeText = fold(row.data.tipe);
+    const tipe = !tipeText || tipeText === 'pg' || tipeText === 'pilihan ganda' ? 'Pilihan ganda' : (tipeText === 'uraian' || tipeText === 'esai' || tipeText === 'essay' ? 'Uraian' : '');
+    const kesulitan = text(row.data.kesulitan) ? X.KESULITAN.find((k) => fold(k) === fold(row.data.kesulitan)) : 'Sedang';
+    if (!tipe) res.errors.push('Tipe harus Pilihan ganda atau Uraian.');
+    if (!kesulitan) res.errors.push('Kesulitan harus Mudah, Sedang, atau Sulit.');
+    const next = { tipe, kesulitan, soal: text(row.data.soal), kunci: text(row.data.kunci).toLowerCase(), pembahasan: text(row.data.pembahasan) };
+    X.OPSI.forEach((o) => { next[`opsi_${o}`] = text(row.data[`opsi_${o}`]); });
+    if (tipe) { const m = X.validateSoal(next); if (m) res.errors.push(m); }
+    let idTp = '';
+    if (text(row.data.kode_tp) && mapel && level) {
+      const tp = work.TP.find((t) => t.id_mapel === mapel.id_mapel && fold(t.tingkat) === fold(level.tingkat) && fold(t.kode_tp) === fold(row.data.kode_tp));
+      if (tp) idTp = tp.id_tp; else res.errors.push(`TP ${text(row.data.kode_tp)} belum terdaftar.`);
+    }
+    const key = `${mapel ? mapel.id_mapel : ''}|${fold(row.data.tingkat)}|${fold(next.soal)}`;
+    if (next.soal && ctx.seen.has(key)) res.errors.push(`Sama dengan baris ${ctx.seen.get(key)} di file ini.`);
+    if (res.errors.length) return finish(res, row, ctx, 'masalah');
+    ctx.seen.set(key, row.no);
+    Object.assign(next, { id_mapel: mapel.id_mapel, tingkat: level.tingkat, id_tp: idTp });
+    const existing = work.BankSoal.find((s) => s.id_mapel === mapel.id_mapel && fold(s.tingkat) === fold(level.tingkat) && fold(s.soal) === fold(next.soal));
+    if (!existing) return finish(res, row, ctx, 'baru', null, () => upsert(work, ctx, 'BankSoal', { id_soal: newUuid(), ...next }));
+    const fields = diff(existing, next, [['tipe', 'Tipe'], ['kesulitan', 'Kesulitan'], ['opsi_a', 'A'], ['opsi_b', 'B'], ['opsi_c', 'C'], ['opsi_d', 'D'], ['opsi_e', 'E'], ['kunci', 'Kunci'], ['pembahasan', 'Pembahasan'], ['id_tp', 'TP']]);
+    if (!fields.length) return finish(res, row, ctx, 'sama');
+    return finish(res, row, ctx, 'berubah', fields, () => upsert(work, ctx, 'BankSoal', { ...existing, ...next }));
+  };
+
+  analyzers.kalender = function kalender(row, res, work, ctx) {
+    const judul = text(row.data.judul);
+    const jenis = root.GM.Extras.JENIS_KALENDER.find((j) => fold(j) === fold(row.data.jenis));
+    const mulai = normDate(row.data.tanggal_mulai);
+    const selesai = text(row.data.tanggal_selesai) ? normDate(row.data.tanggal_selesai) : mulai;
+    if (!judul) res.errors.push('Judul kosong.');
+    if (!jenis) res.errors.push('Jenis harus Libur, Ujian, atau Kegiatan.');
+    if (!mulai) res.errors.push('Tanggal mulai harus seperti 21/12/2026.');
+    if (mulai && !selesai) res.errors.push('Tanggal selesai harus seperti 02/01/2027.');
+    if (mulai && selesai && selesai < mulai) res.errors.push('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+    const key = `${mulai}|${fold(judul)}`;
+    if (judul && ctx.seen.has(key)) res.errors.push(`Sama dengan baris ${ctx.seen.get(key)} di file ini.`);
+    if (res.errors.length) return finish(res, row, ctx, 'masalah');
+    ctx.seen.set(key, row.no);
+    const next = { judul, jenis, tanggal_mulai: mulai, tanggal_selesai: selesai, keterangan: text(row.data.keterangan) };
+    const existing = work.Kalender.find((k) => k.tanggal_mulai === mulai && fold(k.judul) === fold(judul));
+    if (!existing) return finish(res, row, ctx, 'baru', null, () => upsert(work, ctx, 'Kalender', { id_kalender: newUuid(), ...next }));
+    const fields = diff(existing, next, [['jenis', 'Jenis'], ['tanggal_selesai', 'Selesai'], ['keterangan', 'Keterangan']]);
+    if (!fields.length) return finish(res, row, ctx, 'sama');
+    return finish(res, row, ctx, 'berubah', fields, () => upsert(work, ctx, 'Kalender', { ...existing, ...next }));
+  };
+
   /** parts dari readParts, db dari Store.snapshotDb. Tidak mengubah db asli. */
   function analyze(parts, db, opts = {}) {
     const work = {};
@@ -542,6 +630,6 @@
 
   root.GM.Importer = {
     KINDS, ORDER, MAX_SIZE, readBook, readParts, analyze, template, problemBook,
-    normTime, normHari, normSemester, normJk, findClash, describeJadwal, fold, text, guessTingkat, activeYear, yearLabel,
+    normDate, normTime, normHari, normSemester, normJk, findClash, describeJadwal, fold, text, guessTingkat, activeYear, yearLabel,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -16,16 +16,21 @@
     TP: { pk: 'id_tp' },
     Penilaian: { pk: 'id_penilaian' },
     Nilai: { pk: 'id_nilai' },
+    CatatanSiswa: { pk: 'id_catatan' },
+    BankSoal: { pk: 'id_soal' },
+    Kalender: { pk: 'id_kalender' },
+    Tugas: { pk: 'id_tugas' },
+    PengumpulanTugas: { pk: 'id_kumpul' },
     ImportLog: { pk: 'id_import' },
   };
   /* Baris yang menunjuk ke baris lain. Dipakai agar data yang masih dipakai tidak terhapus. */
   const REFS = {
     TahunAjaran: [['AnggotaKelas', 'id_tahun'], ['Pengampuan', 'id_tahun']],
-    Mapel: [['Pengampuan', 'id_mapel'], ['TP', 'id_mapel']],
+    Mapel: [['Pengampuan', 'id_mapel'], ['TP', 'id_mapel'], ['BankSoal', 'id_mapel']],
     Kelas: [['AnggotaKelas', 'id_kelas'], ['Pengampuan', 'id_kelas']],
-    Siswa: [['AnggotaKelas', 'id_siswa'], ['Presensi', 'id_siswa'], ['Nilai', 'id_siswa']],
-    Pengampuan: [['Jadwal', 'id_pengampuan'], ['Pertemuan', 'id_pengampuan'], ['Penilaian', 'id_pengampuan']],
-    TP: [['Pertemuan', 'id_tp'], ['Penilaian', 'id_tp']],
+    Siswa: [['AnggotaKelas', 'id_siswa'], ['Presensi', 'id_siswa'], ['Nilai', 'id_siswa'], ['CatatanSiswa', 'id_siswa'], ['PengumpulanTugas', 'id_siswa']],
+    Pengampuan: [['Jadwal', 'id_pengampuan'], ['Pertemuan', 'id_pengampuan'], ['Penilaian', 'id_pengampuan'], ['Tugas', 'id_pengampuan']],
+    TP: [['Pertemuan', 'id_tp'], ['Penilaian', 'id_tp'], ['BankSoal', 'id_tp']],
   };
   const HARI = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
   const SAMPLE_MARK = 'CONTOH';
