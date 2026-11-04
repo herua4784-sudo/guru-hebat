@@ -1,6 +1,6 @@
 /* Menyimpan file aplikasi agar bisa dibuka tanpa internet.
    File lama langsung ditampilkan, lalu diperbarui di latar belakang untuk pembukaan berikutnya. */
-const CACHE = 'guru-mapel-v4';
+const CACHE = 'guru-mapel-v5';
 const FILES = [
   './', 'index.html', 'styles.css', 'config.js', 'manifest.webmanifest',
   'js/schema.js', 'js/store.js', 'js/sync.js', 'js/importer.js', 'js/sample.js', 'js/teaching.js', 'js/reports.js', 'js/app.js',

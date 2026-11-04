@@ -6,7 +6,7 @@
  * Pemasangan: lihat README.md. Jalankan setup() satu kali dari editor.
  */
 
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.1.0';
 var META_COLS = ['created_at', 'updated_at', 'deleted', 'device_id', 'id_import', '_rev'];
 var SCHEMA = {
   Pengaturan:   { pk: 'key',           cols: ['key', 'value'] },
@@ -20,7 +20,7 @@ var SCHEMA = {
   Pertemuan:    { pk: 'id_pertemuan',  cols: ['id_pertemuan', 'id_pengampuan', 'tanggal', 'pertemuan_ke', 'id_tp'] },
   Presensi:     { pk: 'id_presensi',   cols: ['id_presensi', 'id_pertemuan', 'id_siswa', 'status', 'keterangan'] },
   Jurnal:       { pk: 'id_jurnal',     cols: ['id_jurnal', 'id_pertemuan', 'materi', 'kegiatan', 'catatan'] },
-  TP:           { pk: 'id_tp',         cols: ['id_tp', 'id_mapel', 'tingkat', 'kode_tp', 'deskripsi', 'urutan'] },
+  TP:           { pk: 'id_tp',         cols: ['id_tp', 'id_mapel', 'tingkat', 'kode_tp', 'deskripsi', 'urutan', 'target_pertemuan', 'tautan_modul'] },
   Penilaian:    { pk: 'id_penilaian',  cols: ['id_penilaian', 'id_pengampuan', 'id_tp', 'jenis', 'nama', 'tanggal', 'nilai_maks'] },
   Nilai:        { pk: 'id_nilai',      cols: ['id_nilai', 'id_penilaian', 'id_siswa', 'nilai', 'remedial', 'catatan'] },
   ImportLog:    { pk: 'id_import',     cols: ['id_import', 'tanggal', 'jenis_data', 'nama_file', 'jumlah_baru', 'jumlah_diperbarui', 'jumlah_gagal', 'status'] }
@@ -336,6 +336,11 @@ function push_(rows) {
 
   Object.keys(byTable).forEach(function (table) {
     var data = readSheet_(ss, table);
+    // Sheet lama otomatis mendapat kolom baru agar tidak ada isian yang terbuang.
+    if (columns_(table).some(function (c) { return data.headers.indexOf(c) < 0; })) {
+      ensureSheet_(ss, table);
+      data = readSheet_(ss, table);
+    }
     var pkCol = data.headers.indexOf(SCHEMA[table].pk);
     var updatedCol = data.headers.indexOf('updated_at');
     var positions = {};

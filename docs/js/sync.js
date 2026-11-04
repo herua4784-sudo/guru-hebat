@@ -68,6 +68,8 @@
     if (!navigator.onLine) { set({ phase: 'offline', error: '' }); return false; }
     running = true;
     try {
+      const server = await call(Store.meta('api_url'), { action: 'ping' });
+      await Store.setMeta('server_version', server.version);
       await pushAll();
       await pullAll();
       const failed = Store.outboxEntries().filter(([, v]) => v.state === 'failed').length;

@@ -25,6 +25,7 @@
     Kelas: [['AnggotaKelas', 'id_kelas'], ['Pengampuan', 'id_kelas']],
     Siswa: [['AnggotaKelas', 'id_siswa'], ['Presensi', 'id_siswa'], ['Nilai', 'id_siswa']],
     Pengampuan: [['Jadwal', 'id_pengampuan'], ['Pertemuan', 'id_pengampuan'], ['Penilaian', 'id_pengampuan']],
+    TP: [['Pertemuan', 'id_tp'], ['Penilaian', 'id_tp']],
   };
   const HARI = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
   const SAMPLE_MARK = 'CONTOH';

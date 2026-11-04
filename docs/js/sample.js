@@ -26,6 +26,8 @@
     const add = (table, rows) => rows.forEach((row) => out.push({ table, row }));
     add('TahunAjaran', [year]); add('Mapel', mapel); add('Kelas', kelas); add('Siswa', siswa);
     add('AnggotaKelas', anggota); add('Pengampuan', ampu); add('Jadwal', jadwal);
+    add('TP', [['TP 1.1', 'Menjelaskan konsep dasar materi pertama.', '2'], ['TP 1.2', 'Menerapkan konsep pada contoh sehari-hari.', '1'], ['TP 2.1', 'Menganalisis hubungan antarkonsep.', '2']]
+      .map(([kode, deskripsi, target], i) => ({ id_tp: `contoh-tp-${i + 1}`, id_mapel: 'contoh-mapel-A', tingkat: 'VII', kode_tp: kode, deskripsi, urutan: String(i + 1), target_pertemuan: target, tautan_modul: '', ...mark })));
     return out;
   }
 

@@ -85,6 +85,7 @@
       pen: 'M5 19l1-4L16 5l3 3L9 18zM14 7l3 3',
       grade: 'M4 20V10M10 20V4M16 20v-7M21 20H3',
       report: 'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7',
+      book: 'M5 4h6a2 2 0 0 1 1 1v15a2 2 0 0 0-1-1H5zM19 4h-6a2 2 0 0 0-1 1v15a2 2 0 0 1 1-1h6z',
       printer: 'M7 9V4h10v5M7 17H4v-7h16v7h-3M7 14h10v6H7z',
       more: 'M5 12h.01M12 12h.01M19 12h.01',
     };
@@ -645,7 +646,7 @@
     const info = syncInfo();
     const failed = Store.outboxEntries().filter(([, v]) => v.state === 'failed');
     const logs = Store.active('ImportLog').sort((a, b) => b.tanggal.localeCompare(a.tanggal));
-    const hasSample = ['Siswa', 'Mapel', 'Kelas'].some((t) => Store.active(t).some((r) => r.id_import === SAMPLE_MARK));
+    const hasSample = ['Siswa', 'Mapel', 'Kelas', 'TP'].some((t) => Store.active(t).some((r) => r.id_import === SAMPLE_MARK));
     const field = (k, label, extra = {}) => html`<label className="field" htmlFor=${`s-${k}`} key=${k}><span>${label}</span><input id=${`s-${k}`} value=${form[k]} ...${extra} onInput=${(e) => setForm({ ...form, [k]: e.target.value })}/></label>`;
     const save = async (e) => {
       e.preventDefault();
@@ -927,7 +928,8 @@
     const { v, db } = teachingContext();
     const st = Teaching.sessionStatus(db, ampu.id_pengampuan, tanggal);
     const old = db.Jurnal.find((j) => j.id_pertemuan === st.id);
-    const [form, setForm] = useState({ materi: old ? old.materi : '', kegiatan: old ? old.kegiatan : '', catatan: old ? old.catatan : '' });
+    const tps = Teaching.tpForAmpu(db, ampu);
+    const [form, setForm] = useState({ id_tp: st.pertemuan && st.pertemuan.id_tp ? st.pertemuan.id_tp : (old ? '' : Teaching.nextTp(db, ampu)), materi: old ? old.materi : '', kegiatan: old ? old.kegiatan : '', catatan: old ? old.catatan : '' });
     const [dirty, setDirty] = useState(false);
     const [err, setErr] = useState('');
     useEffect(() => { unsaved.current = dirty; return () => { unsaved.current = false; }; }, [dirty]);
@@ -953,6 +955,7 @@
           ? (absent.length ? absent.map((a) => `${(siswa.get(a.id_siswa) || {}).nama || '?'} (${a.status[0]})`).join(', ') : 'Semua hadir')
           : html`<button type="button" className="link" onClick=${onOpenPresensi}>Presensi belum diisi</button>`}</dd></div>
       </dl>
+      ${tps.length ? html`<label className="field" htmlFor="jurnal-tp"><span>Tujuan Pembelajaran</span><select id="jurnal-tp" value=${form.id_tp} onChange=${(e) => set('id_tp', e.target.value)}><option value="">Tidak terkait TP</option>${tps.map((t) => html`<option key=${t.id_tp} value=${t.id_tp}>${t.kode_tp} · ${t.deskripsi}</option>`)}</select></label>` : null}
       <label className="field" htmlFor="jurnal-materi"><span>Materi</span><textarea id="jurnal-materi" rows="2" value=${form.materi} onInput=${(e) => set('materi', e.target.value)}></textarea></label>
       <label className="field" htmlFor="jurnal-kegiatan"><span>Kegiatan pembelajaran</span><textarea id="jurnal-kegiatan" rows="4" value=${form.kegiatan} onInput=${(e) => set('kegiatan', e.target.value)}></textarea></label>
       <label className="field" htmlFor="jurnal-catatan"><span>Catatan kelas</span><textarea id="jurnal-catatan" rows="3" value=${form.catatan} onInput=${(e) => set('catatan', e.target.value)}></textarea></label>
@@ -1025,7 +1028,8 @@
 
   function PenilaianModal({ ampu, row, onClose, toast }) {
     const today = Teaching.ymd(new Date());
-    const [d, setD] = useState(row ? { ...row } : { jenis: 'Formatif', nama: '', tanggal: today, nilai_maks: '100' });
+    const [d, setD] = useState(row ? { ...row } : { jenis: 'Formatif', nama: '', tanggal: today, nilai_maks: '100', id_tp: '' });
+    const tps = Teaching.tpForAmpu(Store.snapshotDb(), ampu);
     const [err, setErr] = useState('');
     const submit = async (e) => {
       e.preventDefault();
@@ -1037,7 +1041,7 @@
       const db = Store.snapshotDb();
       if (db.Penilaian.some((p) => p.id_pengampuan === ampu.id_pengampuan && fold(p.nama) === fold(nama) && p.id_penilaian !== (row && row.id_penilaian))) { setErr('Nama penilaian ini sudah dipakai.'); return; }
       if (row && db.Nilai.some((n) => n.id_penilaian === row.id_penilaian && (Number(n.nilai) > maks || Number(n.remedial) > maks))) { setErr('Ada nilai yang melebihi nilai maksimal baru.'); return; }
-      await Store.commit([{ table: 'Penilaian', row: { ...(row || {}), id_penilaian: row ? row.id_penilaian : Store.uuid(), id_pengampuan: ampu.id_pengampuan, id_tp: row ? row.id_tp : '', jenis: d.jenis, nama, tanggal: d.tanggal, nilai_maks: String(maks) } }]);
+      await Store.commit([{ table: 'Penilaian', row: { ...(row || {}), id_penilaian: row ? row.id_penilaian : Store.uuid(), id_pengampuan: ampu.id_pengampuan, id_tp: d.id_tp || '', jenis: d.jenis, nama, tanggal: d.tanggal, nilai_maks: String(maks) } }]);
       toast('Penilaian tersimpan.');
       onClose();
     };
@@ -1046,6 +1050,7 @@
       <label className="field" htmlFor="pn-tanggal"><span>Tanggal</span><input id="pn-tanggal" type="date" value=${d.tanggal} onChange=${(e) => setD({ ...d, tanggal: e.target.value })}/></label>
       <label className="field full" htmlFor="pn-nama"><span>Nama penilaian</span><input id="pn-nama" placeholder="Contoh: Tugas 1 atau Sumatif Bab 2" value=${d.nama} onInput=${(e) => setD({ ...d, nama: e.target.value })}/></label>
       <label className="field" htmlFor="pn-maks"><span>Nilai maksimal</span><input id="pn-maks" inputMode="decimal" value=${d.nilai_maks} onInput=${(e) => setD({ ...d, nilai_maks: e.target.value })}/></label>
+      ${tps.length ? html`<label className="field full" htmlFor="pn-tp"><span>Tujuan Pembelajaran (boleh kosong)</span><select id="pn-tp" value=${d.id_tp || ''} onChange=${(e) => setD({ ...d, id_tp: e.target.value })}><option value="">Tidak terkait TP</option>${tps.map((t) => html`<option key=${t.id_tp} value=${t.id_tp}>${t.kode_tp} · ${t.deskripsi}</option>`)}</select></label>` : null}
       ${err ? html`<p className="form-error full" role="alert">${err}</p>` : null}
       <div className="form-actions full"><button type="button" className="btn ghost" onClick=${onClose}>Batal</button><button className="btn primary">Simpan</button></div>
     </form><//>`;
@@ -1246,6 +1251,124 @@
     </div>`;
   }
 
+  /* ---------- Perangkat Ajar ---------- */
+  const serverReady = () => {
+    if (Store.meta('mode') !== 'online') return true;
+    const [a, b] = String(Store.meta('server_version') || '0.0').split('.').map(Number);
+    return a > 1 || (a === 1 && b >= 1);
+  };
+  const safeUrl = (u) => (/^https?:\/\/\S+$/i.test(String(u || '').trim()) ? String(u).trim() : '');
+  const TP_TONE = { Tersampaikan: 'baru', Berjalan: 'berubah', Belum: 'sama' };
+
+  function TpModal({ row, mapelId, tingkat, onClose, toast }) {
+    const [d, setD] = useState(row ? { ...row } : { kode_tp: '', deskripsi: '', target_pertemuan: '1', tautan_modul: '' });
+    const [err, setErr] = useState('');
+    const submit = async (e) => {
+      e.preventDefault();
+      const db = Store.snapshotDb();
+      const kode = d.kode_tp.trim();
+      const target = Teaching.parseScore(d.target_pertemuan);
+      const link = String(d.tautan_modul || '').trim();
+      if (!kode) { setErr('Kode TP wajib diisi.'); return; }
+      if (!d.deskripsi.trim()) { setErr('Deskripsi TP wajib diisi.'); return; }
+      if (typeof target !== 'number' || target < 1 || !Number.isInteger(target)) { setErr('Target pertemuan harus angka bulat mulai dari 1.'); return; }
+      if (link && !safeUrl(link)) { setErr('Tautan modul harus diawali https://'); return; }
+      const same = db.TP.filter((t) => t.id_mapel === mapelId && fold(t.tingkat) === fold(tingkat));
+      if (same.some((t) => fold(t.kode_tp) === fold(kode) && t.id_tp !== (row && row.id_tp))) { setErr('Kode TP ini sudah dipakai.'); return; }
+      const urutan = row ? row.urutan : String(Math.max(0, ...same.map((t) => Number(t.urutan) || 0)) + 1);
+      await Store.commit([{ table: 'TP', row: { ...(row || {}), id_tp: row ? row.id_tp : Store.uuid(), id_mapel: mapelId, tingkat, kode_tp: kode, deskripsi: d.deskripsi.trim(), urutan, target_pertemuan: String(target), tautan_modul: link } }]);
+      toast('TP tersimpan.');
+      onClose();
+    };
+    return html`<${Modal} title=${row ? 'Ubah TP' : 'Tambah TP'} onClose=${onClose}><form className="form-grid" onSubmit=${submit}>
+      <label className="field" htmlFor="tp-kode"><span>Kode TP</span><input id="tp-kode" placeholder="TP 1.1" value=${d.kode_tp} onInput=${(e) => setD({ ...d, kode_tp: e.target.value })}/></label>
+      <label className="field" htmlFor="tp-target"><span>Target pertemuan</span><input id="tp-target" inputMode="numeric" value=${d.target_pertemuan} onInput=${(e) => setD({ ...d, target_pertemuan: e.target.value })}/></label>
+      <label className="field full" htmlFor="tp-desk"><span>Deskripsi Tujuan Pembelajaran</span><textarea id="tp-desk" rows="3" value=${d.deskripsi} onInput=${(e) => setD({ ...d, deskripsi: e.target.value })}></textarea></label>
+      <label className="field full" htmlFor="tp-link"><span>Tautan modul ajar (boleh kosong)</span><input id="tp-link" type="url" inputMode="url" placeholder="https://drive.google.com/…" value=${d.tautan_modul} onInput=${(e) => setD({ ...d, tautan_modul: e.target.value })}/></label>
+      ${err ? html`<p className="form-error full" role="alert">${err}</p>` : null}
+      <div className="form-actions full"><button type="button" className="btn ghost" onClick=${onClose}>Batal</button><button className="btn primary">Simpan</button></div>
+    </form><//>`;
+  }
+
+  function TpList({ ready, ask, toast, openImport }) {
+    const { v, db, list } = teachingContext();
+    const mapels = [...new Map(list.map((p) => [p.id_mapel, v.mapel.get(p.id_mapel)])).values()].filter(Boolean);
+    const [mapelId, setMapelId] = useState(mapels[0] ? mapels[0].id_mapel : '');
+    const levels = [...new Set(list.filter((p) => p.id_mapel === mapelId).map((p) => (v.kelas.get(p.id_kelas) || {}).tingkat).filter(Boolean))];
+    const [picked, setPicked] = useState('');
+    const tingkat = levels.includes(picked) ? picked : (levels[0] || '');
+    const [modal, setModal] = useState(null);
+    const rows = Teaching.tpList(db, mapelId, tingkat);
+    const move = async (i, step) => {
+      const a = rows[i]; const b = rows[i + step];
+      if (!b) return;
+      await Store.commit(rows.map((r, x) => { const pos = x === i ? i + step : (x === i + step ? i : x); return { table: 'TP', row: { ...r, urutan: String(pos + 1) } }; }));
+    };
+    const remove = (t) => ask({
+      title: 'Hapus TP ini?', text: `${t.kode_tp} akan dihapus dari daftar.`, action: 'Hapus TP', danger: true,
+      onConfirm: async () => {
+        const res = Store.splitDeletable([{ table: 'TP', id: t.id_tp }]);
+        if (res.blocked.length) { toast('Tidak bisa dihapus karena sudah dipakai di Jurnal atau Penilaian.', 'bad'); return; }
+        await Store.softDelete(res.ok);
+        toast('TP dihapus.');
+      },
+    });
+    return html`<div className="stack">
+      <div className="report-tools">
+        <label className="field" htmlFor="tp-mapel"><span>Mapel</span><select id="tp-mapel" value=${mapelId} onChange=${(e) => setMapelId(e.target.value)}>${mapels.map((m) => html`<option key=${m.id_mapel} value=${m.id_mapel}>${m.nama_mapel}</option>`)}</select></label>
+        <label className="field" htmlFor="tp-tingkat"><span>Tingkat</span><select id="tp-tingkat" value=${tingkat} onChange=${(e) => setPicked(e.target.value)}>${levels.map((l) => html`<option key=${l} value=${l}>${l}</option>`)}</select></label>
+        <div className="head-actions">
+          <button className="btn ghost" disabled=${!ready} onClick=${() => openImport('tp')}><${Icon} name="upload"/>Import</button>
+          <button className="btn primary" disabled=${!ready || !tingkat} onClick=${() => setModal({ row: null })}><${Icon} name="plus"/>Tambah TP</button>
+        </div>
+      </div>
+      ${rows.length ? html`<ol className="tp-list">${rows.map((t, i) => {
+        const link = safeUrl(t.tautan_modul);
+        return html`<li key=${t.id_tp}>
+          <div className="tp-order"><button aria-label=${`Naikkan ${t.kode_tp}`} disabled=${i === 0} onClick=${() => move(i, -1)}>▲</button><button aria-label=${`Turunkan ${t.kode_tp}`} disabled=${i === rows.length - 1} onClick=${() => move(i, 1)}>▼</button></div>
+          <div className="tp-body"><b>${t.kode_tp}</b> ${t.id_import === SAMPLE_MARK ? html`<span className="tag">Contoh</span>` : null}<p>${t.deskripsi}</p>
+            <p className="muted small">Target ${num(t.target_pertemuan || 1)} pertemuan${link ? ' · ' : ''}${link ? html`<a href=${link} target="_blank" rel="noopener noreferrer">Buka modul ajar</a>` : ''}</p></div>
+          <div className="row-actions"><button className="link" onClick=${() => setModal({ row: t })}>Ubah</button><button className="link danger" onClick=${() => remove(t)}>Hapus</button></div>
+        </li>`;
+      })}</ol>` : html`<div className="panel empty"><p>Belum ada TP untuk pilihan ini. Tambahkan satu per satu, atau import dari Excel.</p></div>`}
+      ${modal ? html`<${TpModal} row=${modal.row} mapelId=${mapelId} tingkat=${tingkat} toast=${toast} onClose=${() => setModal(null)}/>` : null}
+    </div>`;
+  }
+
+  function TpProgress({ session, openSession }) {
+    const { v, db, list } = teachingContext();
+    const [id, setId] = useState(session.id_pengampuan);
+    const ampu = v.ampuMap.get(id);
+    const data = ampu ? Teaching.tpProgress(db, ampu) : null;
+    return html`<div className="stack">
+      <label className="field grade-select" htmlFor="prog-ampu"><span>Mapel dan kelas</span><select id="prog-ampu" value=${id} onChange=${(e) => setId(e.target.value)}>${list.map((p) => html`<option key=${p.id_pengampuan} value=${p.id_pengampuan}>${v.ampuLabel(p)}</option>`)}</select></label>
+      ${data && data.items.length ? html`
+      <div className="tiles recap-tiles"><div className="baru"><b>${num(data.done)}</b><span>Tersampaikan</span></div><div className="berubah"><b>${num(data.running)}</b><span>Berjalan</span></div><div><b>${num(data.waiting)}</b><span>Belum</span></div><div><b>${num(data.used)} / ${num(data.target)}</b><span>Pertemuan terpakai</span></div></div>
+      <div className="meter" role="img" aria-label=${`${data.done} dari ${data.items.length} TP tersampaikan`}><i style=${{ width: `${(data.done / data.items.length) * 100}%` }}></i></div>
+      <ol className="tp-list progress">${data.items.map((x) => {
+        const link = safeUrl(x.tp.tautan_modul);
+        return html`<li key=${x.tp.id_tp}><div className="tp-body"><div className="history-head"><b>${x.tp.kode_tp}</b><span className=${`chip ${TP_TONE[x.status]}`}>${x.status}</span></div>
+          <p>${x.tp.deskripsi}</p>
+          <p className="muted small">${num(x.sessions.length)} dari ${num(x.target)} pertemuan${x.sessions.length ? ` · ${x.sessions.map((s) => shortDate(s.tanggal)).join(', ')}` : ''}${link ? ' · ' : ''}${link ? html`<a href=${link} target="_blank" rel="noopener noreferrer">Buka modul ajar</a>` : ''}</p></div></li>`;
+      })}</ol>
+      <p className="muted small">Status dihitung dari TP yang dipilih saat mengisi Jurnal.</p>
+      <div><button className="btn small ghost" onClick=${() => openSession('jurnal', { id_pengampuan: id, tanggal: Teaching.ymd(new Date()) })}>Isi jurnal hari ini</button></div>`
+      : html`<div className="panel empty"><p>Belum ada TP untuk mapel dan tingkat kelas ini.</p></div>`}
+    </div>`;
+  }
+
+  function PerangkatPage({ session, ask, toast, go, openImport, openSession }) {
+    const { list } = teachingContext();
+    const [tab, setTab] = useState('tp');
+    const ready = serverReady();
+    return html`<div className="page"><header className="page-head"><div><p className="eyebrow">Perangkat Ajar</p><h1>${tab === 'tp' ? 'Tujuan Pembelajaran' : 'Progres TP'}</h1></div></header>
+      ${!ready ? html`<div className="sample-bar"><p><b>Perbarui Apps Script dulu.</b> Tempel Code.gs terbaru, lalu buat versi baru pada deployment. Setelah itu klik Sinkron sekarang.</p>
+        <button className="btn small ghost" onClick=${() => Sync.run()}><${Icon} name="sync"/>Sinkron sekarang</button></div>` : null}
+      ${list.length ? html`<${SubTabs} tabs=${[['tp', 'Daftar TP/ATP'], ['progres', 'Progres per kelas']]} value=${tab} onChange=${setTab}/>
+      ${tab === 'tp' ? html`<${TpList} ready=${ready} ask=${ask} toast=${toast} openImport=${openImport}/>` : html`<${TpProgress} session=${session} openSession=${openSession}/>`}` : html`<${NeedSetup} go=${go}/>`}
+    </div>`;
+  }
+
   /* ---------- Kerangka ---------- */
   function App() {
     useStoreVersion();
@@ -1289,8 +1412,8 @@
     const go = (p, t) => guard(() => leave(p, t));
     const openSession = (p, s) => guard(() => { setSession(s); leave(p); });
     const current = session && session.id_pengampuan ? session : defaultSession();
-    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['nilai', 'Penilaian', 'grade'], ['laporan', 'Laporan', 'report'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
-    const extra = ['laporan', 'data', 'settings'];
+    const nav = [['home', 'Beranda', 'home'], ['presensi', 'Presensi', 'check'], ['jurnal', 'Jurnal', 'pen'], ['nilai', 'Penilaian', 'grade'], ['perangkat', 'Perangkat Ajar', 'book'], ['laporan', 'Laporan', 'report'], ['data', 'Data Master', 'data'], ['settings', 'Pengaturan', 'gear']];
+    const extra = ['perangkat', 'laporan', 'data', 'settings'];
     const needLogin = Sync.status.phase === 'perlu-login';
     return html`<div className="shell">
       <aside className="side">
@@ -1305,6 +1428,7 @@
         ${page === 'presensi' ? html`<${PresensiPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard}/>` : null}
         ${page === 'jurnal' ? html`<${JurnalPage} session=${current} setSession=${setSession} toast=${toast} go=${go} guard=${guard} openSession=${openSession}/>` : null}
         ${page === 'nilai' ? html`<${PenilaianPage} session=${current} setSession=${setSession} ask=${ask} toast=${toast} go=${go} guard=${guard} openImport=${setImportKind}/>` : null}
+        ${page === 'perangkat' ? html`<${PerangkatPage} session=${current} ask=${ask} toast=${toast} go=${go} openImport=${setImportKind} openSession=${openSession}/>` : null}
         ${page === 'laporan' ? html`<${LaporanPage} session=${current} toast=${toast} go=${go}/>` : null}
         ${page === 'data' ? html`<${Master} tab=${tab} setTab=${setTab} openImport=${setImportKind} ask=${ask} toast=${toast}/>` : null}
         ${page === 'settings' ? html`<${Settings} openImport=${setImportKind} ask=${ask} toast=${toast} onLock=${() => setGate('unlock')} onReset=${boot}/>` : null}

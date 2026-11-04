@@ -33,6 +33,11 @@ Jika `Code.gs` diubah nanti: **Terapkan > Kelola deployment > Edit > Versi baru*
 4. Buka alamat yang diberikan GitHub, masukkan PIN awal, lalu ganti PIN di menu Pengaturan.
 5. Di HP, pilih **Tambahkan ke layar utama** agar terpasang seperti aplikasi.
 
+## Memperbarui Apps Script
+1. Tempel `gas/Code.gs` terbaru ke editor Apps Script, lalu simpan.
+2. Pilih **Terapkan > Kelola deployment > Edit > Versi baru > Terapkan**.
+3. Alamat `/exec` tetap sama, jadi `config.js` tidak perlu diubah.
+
 ## Aturan penting
 - Ubah data lewat aplikasi, bukan langsung di Spreadsheet. Perubahan manual di sheet tidak terkirim ke perangkat.
 - Jangan menaruh data siswa di repository. Repository hanya berisi kode tampilan.

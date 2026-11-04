@@ -53,6 +53,14 @@
     { key: 'remedial', label: 'remedial', ex: '75' },
     { key: 'catatan', label: 'catatan', ex: '' },
   ] };
+  KINDS.tp = { label: 'TP/ATP', sheet: 'TP', table: 'TP', cols: [
+    { key: 'mapel', label: 'mapel', req: true, ex: 'Matematika', aliases: ['nama_mapel', 'mata_pelajaran'] },
+    { key: 'tingkat', label: 'tingkat', req: true, ex: 'VII', note: 'Harus sama dengan tingkat pada data Kelas' },
+    { key: 'kode_tp', label: 'kode_tp', req: true, ex: 'TP 1.1', text: true, aliases: ['kode', 'kode_tujuan'] },
+    { key: 'deskripsi', label: 'deskripsi', req: true, ex: 'Menjelaskan konsep bilangan bulat', aliases: ['tujuan_pembelajaran', 'tp'] },
+    { key: 'target_pertemuan', label: 'target_pertemuan', ex: '2', note: 'Kosongkan untuk 1 pertemuan', aliases: ['target', 'jp'] },
+    { key: 'tautan_modul', label: 'tautan_modul', ex: 'https://drive.google.com/...', aliases: ['modul', 'link_modul', 'tautan'] },
+  ] };
   const ORDER = ['tahun', 'mapel', 'kelas', 'siswa', 'pengampuan', 'jadwal'];
 
   /* ---------- Bantuan ---------- */
@@ -437,6 +445,32 @@
     const apply = () => upsert(work, ctx, 'Nilai', changes[0].row);
     if (!old) return finish(res, row, ctx, 'baru', null, apply);
     return finish(res, row, ctx, 'berubah', diff(old, changes[0].row, [['nilai', 'Nilai'], ['remedial', 'Remedial'], ['catatan', 'Catatan']]), apply);
+  };
+
+  analyzers.tp = function tp(row, res, work, ctx) {
+    const mapel = work.Mapel.find((m) => fold(m.nama_mapel) === fold(row.data.mapel) || (text(m.kode) && fold(m.kode) === fold(row.data.mapel)));
+    const level = work.Kelas.find((k) => fold(k.tingkat) === fold(row.data.tingkat));
+    const kode = text(row.data.kode_tp);
+    const deskripsi = text(row.data.deskripsi);
+    const targetText = text(row.data.target_pertemuan) || '1';
+    const link = text(row.data.tautan_modul);
+    if (!mapel) res.errors.push(`Mapel ${text(row.data.mapel) || '(kosong)'} belum terdaftar.`);
+    if (!level) res.errors.push(`Tingkat ${text(row.data.tingkat) || '(kosong)'} tidak ada pada data Kelas.`);
+    if (!kode) res.errors.push('Kode TP kosong.');
+    if (!deskripsi) res.errors.push('Deskripsi kosong.');
+    if (!/^[1-9]\d*$/.test(targetText)) res.errors.push('Target pertemuan harus angka bulat mulai dari 1.');
+    if (link && !/^https?:\/\/\S+$/i.test(link)) res.errors.push('Tautan modul harus diawali https://');
+    const key = `${mapel ? mapel.id_mapel : ''}|${fold(row.data.tingkat)}|${fold(kode)}`;
+    if (kode && ctx.seen.has(key)) res.errors.push(`Sama dengan baris ${ctx.seen.get(key)} di file ini.`);
+    if (res.errors.length) return finish(res, row, ctx, 'masalah');
+    ctx.seen.set(key, row.no);
+    const same = work.TP.filter((t) => t.id_mapel === mapel.id_mapel && fold(t.tingkat) === fold(level.tingkat));
+    const existing = same.find((t) => fold(t.kode_tp) === fold(kode));
+    const next = { id_mapel: mapel.id_mapel, tingkat: level.tingkat, kode_tp: kode, deskripsi, target_pertemuan: targetText, tautan_modul: link };
+    if (!existing) return finish(res, row, ctx, 'baru', null, () => upsert(work, ctx, 'TP', { id_tp: newUuid(), urutan: String(Math.max(0, ...same.map((t) => Number(t.urutan) || 0)) + 1), ...next }));
+    const fields = diff(existing, next, [['deskripsi', 'Deskripsi'], ['target_pertemuan', 'Target'], ['tautan_modul', 'Tautan']]);
+    if (!fields.length) return finish(res, row, ctx, 'sama');
+    return finish(res, row, ctx, 'berubah', fields, () => upsert(work, ctx, 'TP', { ...existing, ...next }));
   };
 
   /** parts dari readParts, db dari Store.snapshotDb. Tidak mengubah db asli. */

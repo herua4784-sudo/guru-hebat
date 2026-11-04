@@ -73,6 +73,12 @@
 
   function saveJurnal(db, ampu, tanggal, form) {
     const { id, changes } = ensureSession(db, ampu, tanggal);
+    if (form.id_tp !== undefined) {
+      const fresh = changes.find((c) => c.table === 'Pertemuan' && c.row.id_pertemuan === id);
+      const current = db.Pertemuan.find((p) => p.id_pertemuan === id);
+      if (fresh) fresh.row = { ...fresh.row, id_tp: form.id_tp };
+      else if (current && (current.id_tp || '') !== form.id_tp) changes.push({ table: 'Pertemuan', row: { ...current, id_tp: form.id_tp } });
+    }
     const old = db.Jurnal.find((j) => j.id_pertemuan === id);
     const row = { materi: form.materi.trim(), kegiatan: form.kegiatan.trim(), catatan: form.catatan.trim() };
     changes.push({ table: 'Jurnal', row: { ...(old || {}), id_jurnal: jurnalId(id), id_pertemuan: id, ...row } });
@@ -259,9 +265,39 @@
     return { filled: scores.length, total: roster(db, ampu, '').length, rata: average(scores), kurang: scores.filter((x) => x < kktp).length };
   }
 
+  /* ---------- Perangkat Ajar ---------- */
+  const lower = (v) => String(v || '').trim().toLocaleLowerCase('id-ID');
+  const tpList = (db, idMapel, tingkat) => db.TP.filter((t) => t.id_mapel === idMapel && lower(t.tingkat) === lower(tingkat))
+    .sort((a, b) => (Number(a.urutan) || 0) - (Number(b.urutan) || 0) || a.kode_tp.localeCompare(b.kode_tp, 'id', { numeric: true }));
+  const tpForAmpu = (db, ampu) => {
+    const kelas = db.Kelas.find((k) => k.id_kelas === ampu.id_kelas);
+    return kelas ? tpList(db, ampu.id_mapel, kelas.tingkat) : [];
+  };
+
+  function tpProgress(db, ampu) {
+    const meetings = sessions(db, ampu.id_pengampuan);
+    const items = tpForAmpu(db, ampu).map((tp) => {
+      const used = meetings.filter((p) => p.id_tp === tp.id_tp);
+      const target = Math.max(1, Number(tp.target_pertemuan) || 1);
+      const status = !used.length ? 'Belum' : (used.length >= target ? 'Tersampaikan' : 'Berjalan');
+      return { tp, target, sessions: used, status };
+    });
+    const count = (s) => items.filter((x) => x.status === s).length;
+    return {
+      items, done: count('Tersampaikan'), running: count('Berjalan'), waiting: count('Belum'),
+      used: items.reduce((n, x) => n + x.sessions.length, 0), target: items.reduce((n, x) => n + x.target, 0),
+    };
+  }
+
+  /** TP berikutnya yang belum tuntas, sebagai pilihan awal saat mengisi jurnal. */
+  function nextTp(db, ampu) {
+    const hit = tpProgress(db, ampu).items.find((x) => x.status !== 'Tersampaikan');
+    return hit ? hit.tp.id_tp : '';
+  }
+
   root.GM.Teaching = {
     STATUS, pertemuanId, presensiId, jurnalId, ymd, parseYmd, hariOf, addDays, roster, sessions,
     ensureSession, savePresensi, saveJurnal, deleteSession, sessionStatus, absent, recap, reminders,
-    JENIS, nilaiId, parseScore, effectiveScore, assessments, validateEntry, saveNilai, deletePenilaian, gradeSummary, assessmentStats,
+    tpList, tpForAmpu, tpProgress, nextTp, JENIS, nilaiId, parseScore, effectiveScore, assessments, validateEntry, saveNilai, deletePenilaian, gradeSummary, assessmentStats,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

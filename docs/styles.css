@@ -231,6 +231,13 @@ th.a-r, th.a-l, th.a-c { text-align: center !important; }
 .report-empty { padding: 34px 0; text-align: center; color: var(--muted); }
 .signs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; break-inside: avoid; }
 .sign { display: grid; justify-items: center; text-align: center; } .sign-name { margin-top: 58px; font-weight: 750; text-decoration: underline; }
+.tp-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tp-list li { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 11px 14px 11px 8px; border-top: 1px solid var(--line); }
+.tp-list li:first-child { border-top: 0; } .tp-list.progress li { grid-template-columns: minmax(0, 1fr); padding-left: 14px; }
+.tp-body { min-width: 0; display: grid; gap: 3px; overflow-wrap: anywhere; } .tp-body a { color: var(--primary); font-weight: 700; }
+.tp-order { display: grid; gap: 3px; }
+.tp-order button { min-height: 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: .68rem; cursor: pointer; } .tp-order button:disabled { opacity: .35; cursor: default; }
+.meter { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; } .meter i { display: block; height: 100%; background: var(--primary); }
 @media print {
   :root { --bg: #fff; --surface: #fff; --ink: #000; --muted: #333; --line: #000; color-scheme: light; }
   html, body { background: #fff !important; color: #000; font-size: 11pt; }
@@ -262,6 +269,7 @@ th.a-r, th.a-l, th.a-c { text-align: center !important; }
   .modal, .modal.wide { width: 100%; max-height: 94vh; border-radius: 14px 14px 0 0; }
 }
 @media (max-width: 640px) {
+  .tp-list li { grid-template-columns: 34px minmax(0, 1fr); padding-right: 12px; } .tp-list li .row-actions { grid-column: 2; text-align: left; width: auto; }
   .report { padding: 16px 13px; }
   .report-meta { grid-template-columns: minmax(0, 1fr); } .report-meta div { grid-template-columns: 104px minmax(0, 1fr); }
   .report-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .report-stats div { border-left: 0; }
